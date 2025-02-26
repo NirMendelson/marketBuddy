@@ -75,9 +75,10 @@ const Home = () => {
 
   return (
     <div>
+    
       {/* Background Image */}
       <div>
-        <img className="bg-img" src="/3000X3000.jpg" alt="Background" />
+      <img className="bg-img" src={`${process.env.PUBLIC_URL}/3000X3000.jpg`} alt="Background" />
       </div>
 
       {/* Container for the toggle and form */}
