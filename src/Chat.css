@@ -1,0 +1,110 @@
+
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 90vh;
+  position: relative;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+}
+
+.user-button {
+  background-color: #416655;
+  border: none;
+  color: white;
+  padding: 10px;
+  margin: 10px 20px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.chat-messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column; /* Ensures messages are stacked vertically */
+  align-items: flex-start; /* Aligns messages to the left by default */
+}
+
+.message {
+  background: white;
+  padding: 10px;
+  border-radius: 10px;
+  margin: 5px 0;
+  display: inline-block;
+  max-width: 35%;
+  min-width: 50px; /* Ensures tiny messages don’t collapse */
+  word-wrap: break-word;
+  white-space: pre-wrap; /* Allows proper word wrapping */
+  width: fit-content; /* Makes the message bubble only as wide as necessary */
+}
+
+.message.user {
+  background: #416655;
+  color: white;
+  align-self: flex-end;
+}
+
+
+.chat-input-container {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  background-color: #d9dbd6;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50%;
+  border-radius: 10px;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 20px;
+  outline: none;
+  height: 40px;
+}
+
+.send-button {
+  background-color: #416655;
+  border: none;
+  color: white;
+  padding: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.user-info-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+}
+
+.user-info-content {
+  text-align: center;
+}
+
+.close-button {
+  background-color: #416655;
+  border: none;
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-top: 10px;
+}

@@ -1,15 +1,15 @@
 import React from "react";
-import { createRoot } from "react-dom/client";
-import { HashRouter as Router, Route, Routes } from "react-router-dom";
+import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import Home from "./Home";
 import Header from "./Header";
+import Chat from "./Chat";
 
 const App = () => {
   return (
     <Router>
-      <Header />
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/chat" element={<Chat />} />
       </Routes>
     </Router>
   );
