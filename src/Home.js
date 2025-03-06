@@ -34,7 +34,7 @@ const Home = () => {
     try {
       if (formMode === "signup") {
         // ---- SIGNUP LOGIC ----
-        const response = await fetch("/signup", {
+        const response = await fetch("http://localhost:5000/signup", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -50,7 +50,7 @@ const Home = () => {
         }
       } else {
         // ---- LOGIN LOGIC ----
-        const response = await fetch("/login", {
+        const response = await fetch("http://localhost:5000/login", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

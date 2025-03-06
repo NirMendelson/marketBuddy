@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require("express");
-const bcrypt = require("bcrypt"); // You'll need to install this: npm install bcrypt
+const bcrypt = require("bcrypt"); 
+const cors = require("cors");  
 const app = express();
 const { pool, initializeDatabase } = require('./src/config/db');
 
@@ -8,8 +9,8 @@ const { pool, initializeDatabase } = require('./src/config/db');
 initializeDatabase();
 
 // Middleware
+app.use(cors());  // Enable CORS for all routes
 app.use(express.json());
-
 
 // POST /signup route
 app.post("/signup", async (req, res) => {
@@ -49,7 +50,6 @@ app.post("/signup", async (req, res) => {
     res.status(500).json({ error: "אירעה שגיאה, נא לנסות שוב." });
   }
 });
-
 
 // Login route with secure password check
 app.post("/login", async (req, res) => {
