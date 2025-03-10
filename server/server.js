@@ -3,7 +3,7 @@ const express = require("express");
 const bcrypt = require("bcrypt"); 
 const cors = require("cors");  
 const app = express();
-const { pool, initializeDatabase } = require('./src/config/db');
+const { pool, initializeDatabase } = require('./config/db');
 
 // Initialize database
 initializeDatabase();
@@ -81,6 +81,19 @@ app.post("/login", async (req, res) => {
   } catch (error) {
     console.error('Error during login:', error);
     res.status(500).json({ error: "אירעה שגיאה, נא לנסות שוב." });
+  }
+});
+
+// Backend API Which conects FrontEnd to GPT4 Service
+app.post('/process-grocery-list', async (req, res) => {
+  try {
+    const { message } = req.body;
+    // Use the GPT4API service from server directory
+    const result = await require('./services/GPT4API').processGroceryList(message);
+    res.json(result);
+  } catch (error) {
+    console.error('Error processing grocery list:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
