@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import "./Chat.css";
-import { FiSend, FiUser, FiPlus, FiInfo } from "react-icons/fi";
+import { FiSend, FiUser, FiPlus, FiInfo, FiCheck, FiShoppingCart, FiAlertTriangle, FiHelpCircle } from "react-icons/fi";
 
 // API client function to call backend
 const processGroceryList = async (message) => {
@@ -30,9 +30,19 @@ const Chat = () => {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [groceryItems, setGroceryItems] = useState([]);
+  const [pendingOptions, setPendingOptions] = useState([]);
+  const [notFoundItems, setNotFoundItems] = useState([]);
   const [showUserInfo, setShowUserInfo] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [showGroceryList, setShowGroceryList] = useState(false);
+  const [hasSubmittedOrder, setHasSubmittedOrder] = useState(false);
+  const messagesEndRef = useRef(null);
+  
+  // Scroll to bottom whenever messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
 
   const handleSend = async () => {
     if (message.trim() !== "") {
@@ -41,144 +51,136 @@ const Chat = () => {
       setMessages([...messages, { text: userMessage, sender: "user" }]);
       setMessage(""); // Clear input field immediately for better UX
       
-      // Check if the message looks like a grocery list based on DB schema
-      const isGroceryList = (() => {
-        // These units exactly match the unit_measure values in the database
-        const validUnitMeasures = [
-          "מ\"ל",  // milliliter - exactly as stored in DB
-          "גרם",   // gram - exactly as stored in DB
-          "ק\"ג",  // kilogram - exactly as stored in DB
-          "ליטר",  // liter - exactly as stored in DB
-        ];
-        
-        // Create a regex pattern that matches any of the valid units
-        const unitPattern = new RegExp(validUnitMeasures.join("|"), "i");
-        
-        return (
-          // Format patterns that match our database format
-          userMessage.match(/\d+\s+[א-ת]/) ||  // Number followed by Hebrew text
-          userMessage.match(/\d+%/) ||         // Percentage (like in "חלב 3%")
-          userMessage.match(unitPattern) ||    // Contains any valid unit measure
-          userMessage.match(/\d+\s+(גרם|מ"ל|ק"ג|ליטר|יחידה)/) || // Number with unit
-          
-          // Multiple items (likely a list)
-          userMessage.split(',').length > 1 || 
-          userMessage.split('\n').length > 1
-        );
-      })();
+      // Set the flag that user has submitted an order
+      setHasSubmittedOrder(true);
       
-      if (isGroceryList) {
-        setIsProcessing(true);
+      setIsProcessing(true);
+      
+      // Unique ID for the "thinking" message
+      const thinkingMsgId = Date.now().toString();
+      
+      try {
+        // Add a "thinking" message
+        setMessages(msgs => [...msgs, { 
+          id: thinkingMsgId,
+          text: "מתחבר ל-Azure OpenAI API... מעבד את הרשימה שלך...", 
+          sender: "ai",
+          isProcessing: true
+        }]);
         
-        // Unique ID for the "thinking" message
-        const thinkingMsgId = Date.now().toString();
+        // Format the message to ensure it's properly processed
+        // Replace commas followed by space with newlines to standardize format
+        // This helps the API process comma-separated lists properly
+        const formattedMessage = userMessage.replace(/,\s+/g, '\n');
         
-        try {
-          // Add a "thinking" message
-          setMessages(msgs => [...msgs, { 
-            id: thinkingMsgId,
-            text: "מתחבר ל-Azure OpenAI API... מעבד את הרשימה שלך...", 
-            sender: "ai",
-            isProcessing: true
-          }]);
+        // Call AI service to process grocery list
+        console.log("Calling Azure OpenAI API with message:", formattedMessage);
+        const aiResponse = await processGroceryList(formattedMessage);
+        
+        // Log the full structured response to console
+        console.log("Azure OpenAI API Processing Results:", aiResponse);
+        
+        // Remove the "thinking" message
+        setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
+        
+        if (aiResponse.items && aiResponse.items.length > 0) {
+          // Separate items into categories:
+          // 1. Certain matches (directly add to cart)
+          const certain = aiResponse.items.filter(item => item.isCertain);
           
-          // Call AI service to process grocery list
-          console.log("Calling Azure OpenAI API with message:", userMessage);
-          const aiResponse = await processGroceryList(userMessage);
+          // 2. Items with potential matches but need user selection
+          const uncertain = aiResponse.items.filter(item => !item.isCertain && item.matchedProducts && item.matchedProducts.length > 0);
           
-          // Log the full structured response to console
-          console.log("Azure OpenAI API Processing Results:", aiResponse);
+          // 3. Items that couldn't be matched at all
+          const notFound = aiResponse.items.filter(item => !item.isCertain && (!item.matchedProducts || item.matchedProducts.length === 0));
           
-          // Remove the "thinking" message
-          setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
+          // Add the certain items to the grocery list
+          updateGroceryItems(certain);
           
-          // Format a response based on the AI processing
-          const formattedResponse = formatAIResponse(aiResponse);
+          // Store not found items
+          setNotFoundItems(notFound);
+          
+          // Set pending options for uncertain items
+          const formattedOptions = uncertain.map(item => ({
+            id: Date.now() + Math.random(),
+            originalItem: item,
+            product: item.product,
+            quantity: item.quantity,
+            unit: item.unit,
+            options: item.matchedProducts
+          }));
+          
+          setPendingOptions(formattedOptions);
+          
+          // Format response messages based on processing results
+          let responseText = "";
+          
+          // First report on successfully added items
+          if (certain.length > 0) {
+            responseText += `✅ נוספו ${certain.length} פריטים לעגלה בהצלחה:\n`;
+            certain.forEach(item => {
+              const topMatch = item.matchedProducts[0];
+              responseText += `• ${item.quantity} ${topMatch.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
+            });
+          }
+          
+          // Report on items that couldn't be matched at all
+          if (notFound.length > 0) {
+            if (responseText) responseText += "\n";
+            responseText += `❌ לא נמצאו ${notFound.length} פריטים:\n`;
+            notFound.forEach(item => {
+              responseText += `• ${item.product} (${item.quantity} ${item.unit || ''})\n`;
+            });
+            responseText += "אתה יכול לנסח מחדש פריטים אלה או לבחור מוצרים דומים מהקטלוג.\n";
+          }
+          
+          // Report on items that need user selection
+          if (uncertain.length > 0) {
+            if (responseText) responseText += "\n";
+            responseText += `⚠️ יש ${uncertain.length} פריטים שדורשים בחירה שלך:\n`;
+            uncertain.forEach(item => {
+              responseText += `• ${item.product} (${item.quantity} ${item.unit || ''})\n`;
+            });
+          }
           
           // Add the formatted response to chat
           setMessages(msgs => [...msgs, { 
-            text: formattedResponse, 
+            text: responseText, 
             sender: "ai" 
           }]);
           
-          // Update grocery items state with the processed items
-          updateGroceryItems(aiResponse.items);
-          
-          // Show the grocery list if we found items
-          if (aiResponse.items && aiResponse.items.length > 0) {
-            setShowGroceryList(true);
+          // Show options selection UI if we have uncertain items
+          if (uncertain.length > 0) {
+            setMessages(msgs => [...msgs, { 
+              text: "אנא בחר את האפשרות המתאימה עבור כל פריט:",
+              sender: "ai",
+              isOptions: true,
+              options: formattedOptions
+            }]);
           }
-          
-        } catch (error) {
-          console.error("Error processing grocery list with Azure OpenAI API:", error);
-          
-          // Remove the "thinking" message
-          setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
-          
-          // Add error message with more specific details
+        } else {
+          // No items found
           setMessages(msgs => [...msgs, { 
-            text: `שגיאה בחיבור ל-Azure OpenAI API: ${error.message}. אנא בדוק את פרטי ההתחברות ב-.env או פנה למנהל המערכת.`, 
+            text: "לא הצלחתי לזהות פריטים ברשימה שלך. אנא נסה שוב עם פורמט אחר או הוסף פרטים נוספים.", 
             sender: "ai" 
           }]);
-        } finally {
-          setIsProcessing(false);
         }
-      } else {
-        // Handle regular chat messages
-        setTimeout(() => {
-          setMessages(msgs => [...msgs, { 
-            text: "אני יכול לעזור לך עם הקניות. נסה לרשום רשימת קניות בפורמט: '2 גבינה לבנה 9%, 250 גרם'. ניתן להוסיף כמה פריטים בהודעה אחת, מופרדים בפסיקים או שורות חדשות.", 
-            sender: "ai" 
-          }]);
-        }, 500);
+        
+      } catch (error) {
+        console.error("Error processing grocery list with Azure OpenAI API:", error);
+        
+        // Remove the "thinking" message
+        setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
+        
+        // Add error message with more specific details
+        setMessages(msgs => [...msgs, { 
+          text: `שגיאה בחיבור ל-Azure OpenAI API: ${error.message}. אנא בדוק את פרטי ההתחברות ב-.env או פנה למנהל המערכת.`, 
+          sender: "ai" 
+        }]);
+      } finally {
+        setIsProcessing(false);
       }
     }
-  };
-
-  // Format the AI response into a readable message
-  const formatAIResponse = (aiResponse) => {
-    if (!aiResponse.items || aiResponse.items.length === 0) {
-      return "לא הצלחתי לזהות פריטים ברשימה שלך. אנא נסה שוב.";
-    }
-    
-    const itemsList = aiResponse.items.map(item => {
-      // Generate text for item based on certainty and matches
-      let itemText = '';
-      
-      if (item.isCertain && item.matchedProducts.length > 0) {
-        const topMatch = item.matchedProducts[0];
-        itemText = `• זיהיתי בוודאות: ${item.quantity} ${topMatch.unit} ${topMatch.name} (${topMatch.brand || 'ללא מותג'}, ${topMatch.price} ₪)`;
-        
-        // Add reasoning if available
-        if (item.reasonForMatch) {
-          itemText += `\n   הסבר: ${item.reasonForMatch}`;
-        }
-      } else if (item.matchedProducts.length > 0) {
-        itemText = `• מצאתי כמה אפשרויות עבור "${item.product}":\n`;
-        
-        // List top 3 matches
-        const topMatches = item.matchedProducts.slice(0, 3);
-        topMatches.forEach((match, index) => {
-          const isSelectedByGPT = match.isSelectedByGPT ? "✓ " : "";
-          itemText += `   ${isSelectedByGPT}${index + 1}. ${match.name} (${match.brand || 'ללא מותג'}, ${match.price} ₪)\n`;
-        });
-        
-        // Add reasoning if available
-        if (item.reasonForMatch) {
-          itemText += `   הסבר: ${item.reasonForMatch}\n`;
-        }
-        
-        itemText += "   אנא ציין איזו אפשרות מתאימה לך.";
-      } else {
-        itemText = `• לא מצאתי התאמה מדויקת עבור "${item.product}". אנא נסה לתאר את המוצר בצורה אחרת.`;
-      }
-      
-      return itemText;
-    }).join('\n\n');
-    
-    const summary = `סיכום: זיהיתי ${aiResponse.summary.totalItems} פריטים, מתוכם ${aiResponse.summary.certainItems} בוודאות גבוהה.`;
-    
-    return `זיהיתי את הפריטים הבאים ברשימה שלך עם המערכת המשולבת (AI + מטצ'ינג מדויק):\n\n${itemsList}\n\n${summary}`;
   };
 
   // Update the grocery items state with the processed items
@@ -206,21 +208,37 @@ const Chat = () => {
     setGroceryItems(prev => [...prev, ...newItems]);
   };
 
-  // Handle item selection from alternatives
-  const handleItemSelection = (itemId, selectedOptionIndex) => {
-    setGroceryItems(items => 
-      items.map(item => 
-        item.id === itemId 
-          ? { 
-              ...item, 
-              selected: true,
-              name: item.alternativeOptions[selectedOptionIndex].name,
-              price: item.alternativeOptions[selectedOptionIndex].price,
-              unit: item.alternativeOptions[selectedOptionIndex].unit
-            } 
-          : item
-      )
-    );
+  // Handle option selection for a pending item
+  const handleOptionSelect = (itemId, optionIndex) => {
+    const pendingItem = pendingOptions.find(item => item.id === itemId);
+    if (!pendingItem) return;
+    
+    const selectedOption = pendingItem.options[optionIndex];
+    
+    // Add the selected item to the grocery list
+    const newItem = {
+      id: Date.now() + Math.random(),
+      name: selectedOption.name,
+      quantity: pendingItem.quantity,
+      unit: selectedOption.unit,
+      price: selectedOption.price,
+      isCertain: true,
+      selected: true,
+      alternativeOptions: pendingItem.options,
+      reasonForMatch: pendingItem.originalItem.reasonForMatch
+    };
+    
+    setGroceryItems(prev => [...prev, newItem]);
+    
+    // Remove the item from pending options
+    setPendingOptions(prev => prev.filter(item => item.id !== itemId));
+    
+    // Add a confirmation message
+    setMessages(msgs => [...msgs, { 
+      text: `✅ נוסף לעגלה: ${pendingItem.quantity} ${selectedOption.unit} ${selectedOption.name} - ${selectedOption.price}₪`, 
+      sender: "ai",
+      isConfirmation: true
+    }]);
   };
 
   // Handle removing an item from the grocery list
@@ -229,7 +247,7 @@ const Chat = () => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault(); // Prevents new line in input
       handleSend();
     }
@@ -237,53 +255,85 @@ const Chat = () => {
 
   // Add a new empty message for the user to enter another grocery item
   const handleAddAnotherItem = () => {
-    setShowGroceryList(false);
     setMessage("");
     // Focus on the input field
     document.querySelector(".chat-input").focus();
   };
 
-  // Create a component for displaying the grocery list
-  const GroceryList = () => {
-    if (!showGroceryList || groceryItems.length === 0) return null;
+  // Try again with not found items
+  const handleRetryNotFoundItems = () => {
+    if (notFoundItems.length === 0) return;
+    
+    // Format not found items into a message
+    const itemsText = notFoundItems.map(item => 
+      `${item.quantity || ""} ${item.product}`
+    ).join("\n");
+    
+    // Set the message and clear not found items
+    setMessage(itemsText);
+    setNotFoundItems([]);
+    
+    // Focus on the textarea
+    document.querySelector(".chat-input").focus();
+  };
+
+  // Render option buttons for pending items
+  const OptionButtons = ({ item }) => {
+    return (
+      <div className="option-buttons">
+        <div className="option-product">{item.product} ({item.quantity} {item.unit || ''})</div>
+        <div className="option-list">
+          {item.options.slice(0, 3).map((option, index) => (
+            <button 
+              key={index} 
+              className={`option-button ${option.isSelectedByGPT ? 'ai-recommended' : ''}`}
+              onClick={() => handleOptionSelect(item.id, index)}
+            >
+              {option.isSelectedByGPT && <FiCheck size={14} className="ai-pick" />} 
+              {option.name} ({option.brand || 'ללא מותג'}) - {option.price}₪
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Create a component for displaying the grocery cart
+  const GroceryCart = () => {
+    const selectedItems = groceryItems.filter(item => item.selected);
+    
+    if (selectedItems.length === 0) {
+      return (
+        <div className="grocery-cart empty-cart">
+          <div className="cart-header">
+            <h3><FiShoppingCart size={18} /> סל הקניות שלך</h3>
+          </div>
+          <div className="empty-cart-message">
+            <p>העגלה שלך ריקה</p>
+            <p>הוסף פריטים מהרשימה שלך</p>
+          </div>
+        </div>
+      );
+    }
+    
+    const total = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     
     return (
-      <div className="grocery-list-container">
-        <h3>רשימת קניות</h3>
-        <div className="grocery-items">
-          {groceryItems.map(item => (
-            <div key={item.id} className={`grocery-item ${item.selected ? 'selected' : 'unselected'}`}>
+      <div className="grocery-cart">
+        <div className="cart-header">
+          <h3><FiShoppingCart size={18} /> סל הקניות שלך</h3>
+          <div className="item-count">{selectedItems.length} פריטים</div>
+        </div>
+        
+        <div className="cart-items">
+          {selectedItems.map(item => (
+            <div key={item.id} className="cart-item">
               <div className="item-info">
                 <div className="item-name">{item.name}</div>
                 <div className="item-details">
-                  {item.quantity} {item.unit} {item.price ? `• ${item.price} ₪` : ''}
+                  {item.quantity} {item.unit} • {item.price}₪
                 </div>
-                
-                {/* Show reasoning if available */}
-                {item.reasonForMatch && (
-                  <div className="item-reasoning">
-                    <FiInfo size={14} /> {item.reasonForMatch}
-                  </div>
-                )}
               </div>
-              
-              {!item.selected && item.alternativeOptions && item.alternativeOptions.length > 0 && (
-                <div className="item-options">
-                  <div className="options-label">בחר מוצר:</div>
-                  <div className="options-list">
-                    {item.alternativeOptions.slice(0, 3).map((option, index) => (
-                      <button 
-                        key={index} 
-                        className={`option-button ${option.isSelectedByGPT ? 'ai-recommended' : ''}`}
-                        onClick={() => handleItemSelection(item.id, index)}
-                      >
-                        {option.isSelectedByGPT && <FiInfo size={14} title="AI המלצת" />} 
-                        {option.name} ({option.brand || 'ללא מותג'}, {option.price} ₪)
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
               
               <button 
                 className="remove-item-button" 
@@ -295,63 +345,224 @@ const Chat = () => {
           ))}
         </div>
         
-        <div className="grocery-actions">
-          <button className="add-item-button" onClick={handleAddAnotherItem}>
-            <FiPlus size={16} /> הוסף פריט נוסף
-          </button>
-          <button className="checkout-button" disabled={groceryItems.filter(i => i.selected).length === 0}>
-            המשך לקופה
-          </button>
+        <div className="cart-footer">
+          <div className="cart-total">סה"כ: {total.toFixed(2)}₪</div>
+          <div className="cart-actions">
+            <button className="add-item-button" onClick={handleAddAnotherItem}>
+              <FiPlus size={16} /> הוסף פריט נוסף
+            </button>
+            <button className="checkout-button">
+              המשך לקופה
+            </button>
+          </div>
         </div>
       </div>
     );
   };
 
+  // Not Found Items Summary Component
+  const NotFoundItemsSummary = () => {
+    if (notFoundItems.length === 0) return null;
+    
+    return (
+      <div className="not-found-items">
+        <div className="not-found-header">
+          <h3><FiAlertTriangle size={18} /> פריטים שלא נמצאו ({notFoundItems.length})</h3>
+        </div>
+        <div className="not-found-list">
+          {notFoundItems.map((item, index) => (
+            <div key={index} className="not-found-item">
+              {item.product} {item.quantity && `(${item.quantity} ${item.unit || ''})`}
+            </div>
+          ))}
+        </div>
+        <button className="retry-button" onClick={handleRetryNotFoundItems}>
+          נסה שוב עם פריטים אלה
+        </button>
+      </div>
+    );
+  };
+
+  // Pending options summary
+  const PendingOptionsSummary = () => {
+    if (pendingOptions.length === 0) return null;
+    
+    return (
+      <div className="pending-options-summary">
+        <div className="pending-header">
+          <h3><FiHelpCircle size={18} /> בחירת אפשרויות ({pendingOptions.length})</h3>
+        </div>
+        <p>יש פריטים שדורשים את הבחירה שלך בתחתית הצ'אט</p>
+      </div>
+    );
+  };
+
+  // Order Status Summary - shows at the bottom after order is processed
+  const OrderStatusSummary = () => {
+    // Only show if user has submitted an order and we have results
+    if (!hasSubmittedOrder || 
+       (groceryItems.length === 0 && pendingOptions.length === 0 && notFoundItems.length === 0)) {
+      return null;
+    }
+    
+    const selectedItems = groceryItems.filter(item => item.selected);
+    
+    return (
+      <div className="order-status-summary">
+        <div className="status-header">
+          <h3>סטטוס ההזמנה שלך</h3>
+        </div>
+        <div className="status-sections">
+          {selectedItems.length > 0 && (
+            <div className="status-section">
+              <div className="status-label success">
+                <FiCheck size={16} /> נוספו לעגלה ({selectedItems.length})
+              </div>
+            </div>
+          )}
+          
+          {pendingOptions.length > 0 && (
+            <div className="status-section">
+              <div className="status-label warning">
+                <FiHelpCircle size={16} /> ממתינים לבחירה ({pendingOptions.length})
+              </div>
+            </div>
+          )}
+          
+          {notFoundItems.length > 0 && (
+            <div className="status-section">
+              <div className="status-label error">
+                <FiAlertTriangle size={16} /> לא נמצאו ({notFoundItems.length})
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Example grocery items with each item on a separate line
+  const exampleItems = [
+    "2 חלב תנובה 3%",
+    "1 מקופלת עילית",
+    "3 יוגורט תות",
+    "1 גבינה לבנה 5% 300 גרם",
+    "1 לחם אחיד פרוס"
+  ];
+
+
   return (
-    <div className="chat-container">
-      <div className="chat-header">
+    <div className="app-container">
+      <div className="header">
+        <div className="app-title">Market Buddy</div>
         <button className="user-button" onClick={() => setShowUserInfo(true)}>
           <FiUser size={20} />
         </button>
       </div>
-
-      {/* Display the grocery list if available */}
-      <GroceryList />
       
-      {/* Only show chat messages if grocery list is not shown */}
-      {!showGroceryList && (
-        <div className="chat-messages">
-          {messages.map((msg, index) => (
-            <div 
-              key={msg.id || index} 
-              className={`message ${msg.sender} ${msg.isProcessing ? 'processing' : ''}`}
-            >
-              {msg.text}
+      {hasSubmittedOrder ? (
+        // Two-column layout after order submission
+        <div className="main-content two-column">
+          {/* Left side - Chat interface */}
+          <div className="chat-container">
+            {/* Chat messages */}
+            <div className="chat-messages">
+              {messages.map((msg, index) => (
+                <div key={msg.id || index} className="message-container">
+                  <div className={`message ${msg.sender} ${msg.isProcessing ? 'processing' : ''}`}>
+                    {msg.text}
+                  </div>
+                  
+                  {/* Render option buttons if this is an options message */}
+                  {msg.isOptions && pendingOptions.length > 0 && (
+                    <div className="options-container">
+                      {pendingOptions.map(item => (
+                        <OptionButtons key={item.id} item={item} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
             </div>
-          ))}
+
+            <div className="chat-input-container">
+              <textarea
+                className="chat-input"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
+                disabled={isProcessing}
+                rows={3}
+              />
+              <button 
+                className="send-button" 
+                onClick={handleSend} 
+                disabled={isProcessing}
+              >
+                <FiSend size={20} />
+              </button>
+            </div>
+            
+            <OrderStatusSummary />
+          </div>
+          
+          {/* Right side - Cart and summaries */}
+          <div className="sidebar">
+            {/* Grocery cart */}
+            <GroceryCart />
+            
+            {/* Not found items summary */}
+            <NotFoundItemsSummary />
+            
+            {/* Pending options reminder */}
+            <PendingOptionsSummary />
+          </div>
+        </div>
+      ) : (
+        // Centered layout before order submission
+        <div className="main-content centered">
+          <div className="centered-container">
+            <div className="welcome-message">
+              <h3>ברוך הבא לעוזר הקניות!</h3>
+              <p>הקלד או הדבק את רשימת הקניות שלך באופן הבא:</p>
+              <div className="format-instructions">
+                <ul className="instruction-list">
+                  <li><span className="highlight">כמות מוצר</span> (לדוגמה: "2 חלב", "1 לחם")</li>
+                  <li>פריט אחד בכל שורה</li>
+                  <li>אפשר להוסיף פרטים כמו: אחוז שומן, יצרן, גודל</li>
+                </ul>
+              </div>
+              <p>לדוגמה:</p>
+              <div className="example-list">
+                {exampleItems.map((item, index) => (
+                  <div key={index} className="example-item">{item}</div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="chat-input-container">
+              <textarea
+                className="chat-input"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
+                disabled={isProcessing}
+                rows={5}
+              />
+              <button 
+                className="send-button" 
+                onClick={handleSend} 
+                disabled={isProcessing}
+              >
+                <FiSend size={20} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      <div className="chat-input-container">
-        <input
-          type="text"
-          className="chat-input"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={showGroceryList 
-            ? "הוסף פריט נוסף לרשימת הקניות..." 
-            : "הקלד פריט קניות (למשל: 2 גבינה לבנה 9%, 250 גרם)..."}
-          disabled={isProcessing}
-        />
-        <button 
-          className="send-button" 
-          onClick={handleSend} 
-          disabled={isProcessing}
-        >
-          <FiSend size={20} />
-        </button>
-      </div>
 
       {showUserInfo && (
         <div className="user-info-modal">
