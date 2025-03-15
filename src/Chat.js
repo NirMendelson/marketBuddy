@@ -1,17 +1,23 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import "./Chat.css";
-import { FiSend, FiUser, FiPlus, FiInfo, FiCheck, FiShoppingCart, FiAlertTriangle, FiHelpCircle } from "react-icons/fi";
+import { FiSend, FiUser, FiPlus, FiCheck, FiShoppingCart, FiAlertTriangle, FiHelpCircle, FiCalendar, FiUsers, FiSettings } from "react-icons/fi";
 
 // API client function to call backend
-const processGroceryList = async (message) => {
+const processGroceryList = async (message, maxParticipants = 1, deliveryDate = null) => {
   try {
-    // Call the backend API endpoint
-    const response = await fetch('/process-grocery-list', {
+    // Call the backend API endpoint to create an order
+    const response = await fetch('/orders/process-list', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ message })
+      credentials: 'include', // Important for sessions
+      body: JSON.stringify({ 
+        message,
+        maxParticipants,
+        deliveryDate
+      })
     });
     
     if (!response.ok) {
@@ -26,7 +32,32 @@ const processGroceryList = async (message) => {
   }
 };
 
+// API function to add items to an existing order
+const addItemsToOrder = async (orderId, items) => {
+  try {
+    const response = await fetch(`/orders/${orderId}/add-items`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({ items })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `API error: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error adding items to order:', error);
+    throw error;
+  }
+};
+
 const Chat = () => {
+  const navigate = useNavigate();
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [groceryItems, setGroceryItems] = useState([]);
@@ -35,7 +66,38 @@ const Chat = () => {
   const [showUserInfo, setShowUserInfo] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasSubmittedOrder, setHasSubmittedOrder] = useState(false);
+  const [currentOrder, setCurrentOrder] = useState(null);
+  const [user, setUser] = useState(null);
+  const [maxParticipants, setMaxParticipants] = useState(1);
+  const [deliveryDate, setDeliveryDate] = useState(null);
+  const [showOrderSettings, setShowOrderSettings] = useState(false);
   const messagesEndRef = useRef(null);
+  
+  // Check if user is authenticated
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/check-auth', {
+          credentials: 'include'
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.isAuthenticated) {
+            setUser(data.user);
+          } else {
+            // Redirect to login if not authenticated
+            navigate('/');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking authentication:', error);
+        navigate('/');
+      }
+    };
+    
+    checkAuth();
+  }, [navigate]);
   
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -73,12 +135,22 @@ const Chat = () => {
         // This helps the API process comma-separated lists properly
         const formattedMessage = userMessage.replace(/,\s+/g, '\n');
         
-        // Call AI service to process grocery list
-        console.log("Calling Azure OpenAI API with message:", formattedMessage);
-        const aiResponse = await processGroceryList(formattedMessage);
+        // Call API to process grocery list and create an order
+        console.log("Creating order with grocery list:", formattedMessage);
+        const apiResponse = await processGroceryList(
+          formattedMessage,
+          maxParticipants,
+          deliveryDate
+        );
+        
+        // Set the current order
+        setCurrentOrder(apiResponse.order);
         
         // Log the full structured response to console
-        console.log("Azure OpenAI API Processing Results:", aiResponse);
+        console.log("API Processing Results:", apiResponse);
+        
+        // Get the processed items from the API response
+        const aiResponse = apiResponse.groceryList;
         
         // Remove the "thinking" message
         setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
@@ -117,7 +189,7 @@ const Chat = () => {
           
           // First report on successfully added items
           if (certain.length > 0) {
-            responseText += `✅ נוספו ${certain.length} פריטים לעגלה בהצלחה:\n`;
+            responseText += `✅ נוספו ${certain.length} פריטים להזמנה בהצלחה:\n`;
             certain.forEach(item => {
               const topMatch = item.matchedProducts[0];
               responseText += `• ${item.quantity} ${topMatch.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
@@ -143,6 +215,12 @@ const Chat = () => {
             });
           }
           
+          // Add order creation confirmation
+          responseText += `\nהזמנה חדשה נוצרה בהצלחה!
+מספר הזמנה: ${apiResponse.order.order_id}
+סופרמרקט: ${apiResponse.order.supermarket}
+מספר משתתפים מקסימלי: ${apiResponse.order.max_participants}`;
+          
           // Add the formatted response to chat
           setMessages(msgs => [...msgs, { 
             text: responseText, 
@@ -167,14 +245,14 @@ const Chat = () => {
         }
         
       } catch (error) {
-        console.error("Error processing grocery list with Azure OpenAI API:", error);
+        console.error("Error processing grocery list:", error);
         
         // Remove the "thinking" message
         setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
         
         // Add error message with more specific details
         setMessages(msgs => [...msgs, { 
-          text: `שגיאה בחיבור ל-Azure OpenAI API: ${error.message}. אנא בדוק את פרטי ההתחברות ב-.env או פנה למנהל המערכת.`, 
+          text: `שגיאה בעיבוד הרשימה: ${error.message}. אנא נסה שוב או פנה לתמיכה.`, 
           sender: "ai" 
         }]);
       } finally {
@@ -195,6 +273,7 @@ const Chat = () => {
         quantity: item.quantity,
         unit: topMatch ? topMatch.unit : item.unit,
         price: topMatch ? topMatch.price : null,
+        productId: topMatch ? topMatch.id : null,
         isCertain: item.isCertain,
         originalItem: item,
         selected: item.isCertain, // Auto-select certain items
@@ -209,7 +288,7 @@ const Chat = () => {
   };
 
   // Handle option selection for a pending item
-  const handleOptionSelect = (itemId, optionIndex) => {
+  const handleOptionSelect = async (itemId, optionIndex) => {
     const pendingItem = pendingOptions.find(item => item.id === itemId);
     if (!pendingItem) return;
     
@@ -222,6 +301,7 @@ const Chat = () => {
       quantity: pendingItem.quantity,
       unit: selectedOption.unit,
       price: selectedOption.price,
+      productId: selectedOption.id,
       isCertain: true,
       selected: true,
       alternativeOptions: pendingItem.options,
@@ -229,6 +309,26 @@ const Chat = () => {
     };
     
     setGroceryItems(prev => [...prev, newItem]);
+    
+    // If we have a current order, add this item to the order in the database
+    if (currentOrder) {
+      try {
+        await addItemsToOrder(currentOrder.order_id, [{
+          productId: selectedOption.id,
+          name: selectedOption.name,
+          quantity: pendingItem.quantity,
+          price: selectedOption.price,
+          unit: selectedOption.unit
+        }]);
+      } catch (error) {
+        console.error("Error adding item to order:", error);
+        // Show error message to user
+        setMessages(msgs => [...msgs, { 
+          text: `שגיאה בהוספת פריט להזמנה: ${error.message}`, 
+          sender: "ai" 
+        }]);
+      }
+    }
     
     // Remove the item from pending options
     setPendingOptions(prev => prev.filter(item => item.id !== itemId));
@@ -246,6 +346,7 @@ const Chat = () => {
     setGroceryItems(items => items.filter(item => item.id !== itemId));
   };
 
+  // Handle Enter key press
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault(); // Prevents new line in input
@@ -275,6 +376,33 @@ const Chat = () => {
     
     // Focus on the textarea
     document.querySelector(".chat-input").focus();
+  };
+
+  // Proceed to checkout (future implementation)
+  const handleCheckout = () => {
+    // Future implementation for checkout process
+    setMessages(msgs => [...msgs, { 
+      text: "מעבר לתהליך התשלום... תכונה זו תהיה זמינה בקרוב!", 
+      sender: "ai" 
+    }]);
+  };
+
+  // Handle logout
+  const handleLogout = async () => {
+    try {
+      await fetch('/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+      navigate('/');
+    } catch (error) {
+      console.error('Error during logout:', error);
+    }
+  };
+
+  // Toggle order settings modal
+  const toggleOrderSettings = () => {
+    setShowOrderSettings(!showOrderSettings);
   };
 
   // Render option buttons for pending items
@@ -351,7 +479,7 @@ const Chat = () => {
             <button className="add-item-button" onClick={handleAddAnotherItem}>
               <FiPlus size={16} /> הוסף פריט נוסף
             </button>
-            <button className="checkout-button">
+            <button className="checkout-button" onClick={handleCheckout}>
               המשך לקופה
             </button>
           </div>
@@ -441,6 +569,47 @@ const Chat = () => {
     );
   };
 
+  // Order Settings Modal
+  const OrderSettingsModal = () => {
+    if (!showOrderSettings) return null;
+    
+    return (
+      <div className="user-info-modal">
+        <div className="user-info-content">
+          <h3>הגדרות הזמנה</h3>
+          
+          <div className="form-group" style={{ marginBottom: '15px' }}>
+            <label htmlFor="maxParticipants">מספר משתתפים מקסימלי:</label>
+            <select 
+              id="maxParticipants" 
+              value={maxParticipants}
+              onChange={(e) => setMaxParticipants(parseInt(e.target.value))}
+              className="settings-input"
+            >
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          
+          <div className="form-group" style={{ marginBottom: '15px' }}>
+            <label htmlFor="deliveryDate">תאריך משלוח:</label>
+            <input 
+              id="deliveryDate" 
+              type="datetime-local" 
+              value={deliveryDate || ''}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              className="settings-input"
+            />
+          </div>
+          
+          <button className="close-button" onClick={toggleOrderSettings}>שמור</button>
+        </div>
+      </div>
+    );
+  };
+
   // Example grocery items with each item on a separate line
   const exampleItems = [
     "2 חלב תנובה 3%",
@@ -450,14 +619,18 @@ const Chat = () => {
     "1 לחם אחיד פרוס"
   ];
 
-
   return (
     <div className="app-container">
       <div className="header">
         <div className="app-title">Market Buddy</div>
-        <button className="user-button" onClick={() => setShowUserInfo(true)}>
-          <FiUser size={20} />
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="user-button" onClick={toggleOrderSettings} title="הגדרות הזמנה">
+            <FiSettings size={20} />
+          </button>
+          <button className="user-button" onClick={() => setShowUserInfo(true)} title="פרטי משתמש">
+            <FiUser size={20} />
+          </button>
+        </div>
       </div>
       
       {hasSubmittedOrder ? (
@@ -510,6 +683,15 @@ const Chat = () => {
           
           {/* Right side - Cart and summaries */}
           <div className="sidebar">
+            {/* Order information */}
+            {currentOrder && (
+              <div className="order-info">
+                <h3>פרטי הזמנה #{currentOrder.order_id}</h3>
+                <p>סופרמרקט: {currentOrder.supermarket}</p>
+                <p>מספר משתתפים: {currentOrder.max_participants}</p>
+              </div>
+            )}
+            
             {/* Grocery cart */}
             <GroceryCart />
             
@@ -525,7 +707,7 @@ const Chat = () => {
         <div className="main-content centered">
           <div className="centered-container">
             <div className="welcome-message">
-              <h3>ברוך הבא לעוזר הקניות!</h3>
+              <h3>ברוך הבא {user?.name || ''} לעוזר הקניות!</h3>
               <p>הקלד או הדבק את רשימת הקניות שלך באופן הבא:</p>
               <div className="format-instructions">
                 <ul className="instruction-list">
@@ -539,6 +721,16 @@ const Chat = () => {
                 {exampleItems.map((item, index) => (
                   <div key={index} className="example-item">{item}</div>
                 ))}
+              </div>
+              
+              <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                <button 
+                  className="action-btn" 
+                  onClick={toggleOrderSettings}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <FiSettings size={16} /> הגדרות הזמנה
+                </button>
               </div>
             </div>
             
@@ -564,16 +756,45 @@ const Chat = () => {
         </div>
       )}
 
+      {/* User Info Modal */}
       {showUserInfo && (
         <div className="user-info-modal">
           <div className="user-info-content">
             <h3>פרטי משתמש</h3>
-            <p>שם: ישראל ישראלי</p>
-            <p>דוא"ל: israel@example.com</p>
-            <button className="close-button" onClick={() => setShowUserInfo(false)}>סגור</button>
+            {user ? (
+              <>
+                <p>שם: {user.name}</p>
+                <p>דוא"ל: {user.email}</p>
+                <p>סופרמרקט מועדף: {user.supermarket}</p>
+                <button className="close-button" onClick={() => setShowUserInfo(false)}>סגור</button>
+                <button 
+                  className="close-button" 
+                  onClick={handleLogout} 
+                  style={{ marginTop: '10px', backgroundColor: '#dc3545' }}
+                >
+                  התנתק
+                </button>
+              </>
+            ) : (
+              <>
+                <p>אינך מחובר למערכת</p>
+                <button 
+                  className="close-button" 
+                  onClick={() => { 
+                    setShowUserInfo(false);
+                    navigate('/');
+                  }}
+                >
+                  התחבר
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
+      
+      {/* Order Settings Modal */}
+      <OrderSettingsModal />
     </div>
   );
 };

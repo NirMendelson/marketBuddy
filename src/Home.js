@@ -1,7 +1,9 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./Home.css";
 
-const Home = () => {
+const Home = ({ onAuthChange }) => {
+  const navigate = useNavigate();
   const [formMode, setFormMode] = useState("signup"); // "signup" or "login"
 
   // State for both signup/login forms
@@ -18,6 +20,7 @@ const Home = () => {
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Handle input changes
   const handleInputChange = (e) => {
@@ -30,31 +33,40 @@ const Home = () => {
     e.preventDefault();
     setErrorMessage("");
     setSuccessMessage("");
+    setIsSubmitting(true);
 
     try {
       if (formMode === "signup") {
         // ---- SIGNUP LOGIC ----
-        const response = await fetch("http://localhost:5000/signup", {
+        const response = await fetch("/signup", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          credentials: 'include', // Important for session cookies
           body: JSON.stringify(formData),
         });
 
         const result = await response.json();
         if (response.ok) {
           setSuccessMessage(result.success || "נרשמת בהצלחה!");
+          // Update authentication status
+          onAuthChange(true);
+          // Redirect to chat after a brief delay
+          setTimeout(() => {
+            navigate('/chat');
+          }, 1000);
         } else {
           setErrorMessage(result.error || "אירעה שגיאה, נא לנסות שוב.");
         }
       } else {
         // ---- LOGIN LOGIC ----
-        const response = await fetch("http://localhost:5000/login", {
+        const response = await fetch("/login", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          credentials: 'include', // Important for session cookies
           body: JSON.stringify({
             email: formData.email,
             password: formData.password,
@@ -64,21 +76,28 @@ const Home = () => {
         const result = await response.json();
         if (response.ok) {
           setSuccessMessage(result.success || "התחברת בהצלחה!");
+          // Update authentication status
+          onAuthChange(true);
+          // Redirect to chat after a brief delay
+          setTimeout(() => {
+            navigate('/chat');
+          }, 1000);
         } else {
           setErrorMessage(result.error || "שם משתמש או סיסמה שגויים.");
         }
       }
     } catch (error) {
       setErrorMessage("שגיאה בהתחברות לשרת, נא לנסות שוב מאוחר יותר.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
     <div>
-    
       {/* Background Image */}
       <div>
-      <img className="bg-img" src={`${process.env.PUBLIC_URL}/3000X3000.jpg`} alt="Background" />
+        <img className="bg-img" src={`${process.env.PUBLIC_URL}/3000X3000.jpg`} alt="Background" />
       </div>
 
       {/* Container for the toggle and form */}
@@ -103,8 +122,6 @@ const Home = () => {
           </span>
         </div>
 
-        {/* Title (based on mode) */}
-
         {/* Form */}
         <form onSubmit={handleSubmit}>
           {/* Email & Password (shown in both modes) */}
@@ -116,6 +133,7 @@ const Home = () => {
                 id="email"
                 value={formData.email}
                 onChange={handleInputChange}
+                required
               />
             </div>
             <div className="form-group">
@@ -125,6 +143,7 @@ const Home = () => {
                 id="password"
                 value={formData.password}
                 onChange={handleInputChange}
+                required
               />
             </div>
           </div>
@@ -140,6 +159,7 @@ const Home = () => {
                     id="phone"
                     value={formData.phone}
                     onChange={handleInputChange}
+                    required
                   />
                 </div>
                 <div className="form-group">
@@ -149,6 +169,7 @@ const Home = () => {
                     id="name"
                     value={formData.name}
                     onChange={handleInputChange}
+                    required
                   />
                 </div>
               </div>
@@ -161,6 +182,7 @@ const Home = () => {
                     id="number"
                     value={formData.number}
                     onChange={handleInputChange}
+                    required
                   />
                 </div>
                 <div className="form-group">
@@ -170,6 +192,7 @@ const Home = () => {
                     id="street"
                     value={formData.street}
                     onChange={handleInputChange}
+                    required
                   />
                 </div>
                 <div className="form-group">
@@ -179,6 +202,7 @@ const Home = () => {
                     id="city"
                     value={formData.city}
                     onChange={handleInputChange}
+                    required
                   />
                 </div>
               </div>
@@ -190,6 +214,7 @@ const Home = () => {
                     id="supermarket"
                     value={formData.supermarket}
                     onChange={handleInputChange}
+                    required
                   >
                     <option value="">בחר סופר</option>
                     <option value="שופרסל">שופרסל</option>
@@ -202,8 +227,15 @@ const Home = () => {
             </>
           )}
 
-          <button type="submit" className="action-btn">
-            {formMode === "signup" ? "הרשמה" : "התחברות"}
+          <button 
+            type="submit" 
+            className="action-btn"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 
+              (formMode === "signup" ? "מבצע הרשמה..." : "מבצע התחברות...") : 
+              (formMode === "signup" ? "הרשמה" : "התחברות")
+            }
           </button>
 
           {/* Error/Success Messages */}

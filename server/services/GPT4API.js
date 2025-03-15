@@ -28,12 +28,11 @@ exports.processGroceryList = async (message) => {
     
     console.log(`Successfully parsed ${parsedItems.length} items from grocery list`);
     
-    // STEP 3: Send the parsed items to HybridProductMatcher.js
+    // STEP 3: Send the parsed items to ProductsMatching.js
     // This begins the hybrid matching process in that file
-    // We also pass a function that GPT-4 can use for product selection
     const processedItems = await processItemsWithHybridMatching(
       parsedItems, 
-      // Pass the function to call GPT-4 API (will be used in HybridProductMatcher.js)
+      // Pass the function to call GPT-4 API
       (prompt) => callGPT4ForProductSelection(prompt)
     );
     
@@ -85,10 +84,18 @@ async function parseGroceryListWithGPT(message) {
             role: 'system',
             content: `You are a grocery shopping assistant that helps parse grocery lists in Hebrew.
                      For each item, extract the following:
-                     - Quantity (default is 1 if not specified)
+                     - Quantity (the number of units the user wants to buy, default is 1 if not specified)
                      - Unit (e.g., גרם, ק"ג, יחידה, מ"ל, ליטר)
-                     - Product name and details
-                     - Size (if specified separately from quantity)
+                     - Product name and details (including brand, percentage, etc.)
+                     
+                     Important: The quantity should represent how many of the product the user wants to order, 
+                     not the weight/size of each product. The product name should include all specifications 
+                     like percentage, brand name, and size. 
+                     
+                     For example, "2 חלב תנובה 3%" should be:
+                     - quantity: 2 (user wants 2 units)
+                     - unit: יחידה (the unit is pieces/units)
+                     - product: "חלב תנובה 3%" (product name includes the brand and percentage)
                      
                      Return the data in JSON format with the following structure:
                      {
@@ -97,7 +104,6 @@ async function parseGroceryListWithGPT(message) {
                           "quantity": number,
                           "unit": string,
                           "product": string,
-                          "size": number (optional),
                           "confidence": number
                         }
                       ]
@@ -174,6 +180,7 @@ async function callGPT4ForProductSelection(prompt) {
             role: 'system',
             content: `You are a grocery shopping assistant that helps match grocery items to products in a database.
                      You will receive a grocery item and a list of candidate products.
+                     When matching, prioritize product name matches first, then consider specifications like percentage (%) content, size, and brand.
                      Select the best matching product and explain your reasoning.`
           },
           {
@@ -231,45 +238,35 @@ function simulateGroceryListParsing(message) {
     const trimmedLine = line.trim();
     if (!trimmedLine) return;
     
-    // Extract quantity using regex
-    const quantityMatch = trimmedLine.match(/(\d+(\.\d+)?)/);
+    // Extract quantity using regex (at the beginning of the line)
+    const quantityMatch = trimmedLine.match(/^(\d+(\.\d+)?)/);
     const quantity = quantityMatch ? parseFloat(quantityMatch[1]) : 1;
     
-    // Remove quantity from the line to get the rest
+    // Remove quantity from the line to get the product details
     let productText = trimmedLine.replace(/^\d+(\.\d+)?/, '').trim();
     
-    // Look for size specification (e.g., "250 גרם")
-    const sizeMatch = productText.match(/(\d+(\.\d+)?)\s*(גרם|ק"ג|מ"ל|ליטר)/);
-    let size = null;
+    // Default unit is "יחידה" (units/pieces)
+    let unit = "יחידה";
     
-    if (sizeMatch) {
-      size = parseFloat(sizeMatch[1]);
-      // Remove size specification from product text
-      productText = productText.replace(sizeMatch[0], '').trim();
-    }
-    
-    // Try to extract unit
-    let unit = "יחידה"; // Default unit
+    // Check if there's a specific unit mentioned
     for (const [unitName, pattern] of Object.entries(unitPatterns)) {
       if (pattern.test(productText)) {
         unit = unitName;
-        // Remove the unit from the product text
-        productText = productText.replace(pattern, '').trim();
+        // Don't remove the unit from product text - keep it as part of product description
         break;
       }
     }
     
-    // Extract product name
-    // Remove any remaining numbers and punctuation at the start
-    const product = productText.replace(/^[\d\s,.]+/, '').trim();
+    // Extract product name (everything after quantity)
+    // Make sure we don't remove important specifications
+    const product = productText.trim();
     
     if (product) {
       items.push({
-        quantity,
-        unit,
-        product,
-        size: size,
-        confidence: 0.8 + (Math.random() * 0.15) // Random confidence between 0.8 and 0.95
+        quantity, // This is how many the user wants to buy
+        unit,     // Units/pieces by default unless specified
+        product,  // Full product description including specifications
+        confidence: 0.9 // High confidence for simulated parsing
       });
     }
   });
@@ -302,10 +299,10 @@ function simulateProductSelection(prompt) {
     : 0.7 + (Math.random() * 0.3); // 0.7-1.0 if selected
   
   const reasonings = [
-    "This product best matches the description and quantity specified by the user.",
-    "The product name, brand, and size align perfectly with the user's request.",
+    "This product best matches the name and specifications provided by the user.",
+    "The product name and brand align perfectly with the user's request.",
     "While not a perfect match, this product is the closest available option.",
-    "The percentage content matches exactly what the user requested."
+    "The percentage content and brand match exactly what the user requested."
   ];
   
   return JSON.stringify({
