@@ -151,10 +151,10 @@ async function parseGroceryListWithGPT(message) {
       throw new Error("Failed to parse AI response: " + error.message);
     }
   } catch (error) {
-    console.error("Error calling Azure OpenAI API, using fallback response:", error);
-    // Return a simulated response for testing
-    return simulateGroceryListParsing(message);
+    console.error("Error calling Azure OpenAI API:", error);
+    throw new Error("Failed to call Azure OpenAI API: " + error.message);
   }
+  
 }
 
 /**
@@ -206,110 +206,9 @@ async function callGPT4ForProductSelection(prompt) {
     return data.choices[0].message.content;
   } catch (error) {
     console.error("Error calling Azure OpenAI for product selection:", error);
-    // Simulate a response for testing
-    return simulateProductSelection(prompt);
+    throw new Error("Failed to call Azure OpenAI for product selection: " + error.message);
   }
 }
 
-/**
- * Generate a simulated response for testing when GPT-4 API is unavailable
- * @param {string} message - The user's grocery list message
- * @returns {Array} - Simulated parsed items
- */
-function simulateGroceryListParsing(message) {
-  console.log("Generating simulated parsing for:", message);
-  
-  // Define some unit patterns to look for
-  const unitPatterns = {
-    "גרם": /גרם|gram|gr/i,
-    "ק\"ג": /ק\"ג|ק"ג|קילו|קג|kg|kilo/i,
-    "מ\"ל": /מ\"ל|מ"ל|מיליליטר|מל|ml/i,
-    "ליטר": /ליטר|ל'|liter|l/i,
-    "יחידה": /יחיד|יח'|יח|unit|piece/i
-  };
-  
-  // Parse for common grocery items
-  const items = [];
-  
-  // Split by comma or newline to handle multiple items
-  const lines = message.split(/[,\n]+/);
-  
-  lines.forEach(line => {
-    const trimmedLine = line.trim();
-    if (!trimmedLine) return;
-    
-    // Extract quantity using regex (at the beginning of the line)
-    const quantityMatch = trimmedLine.match(/^(\d+(\.\d+)?)/);
-    const quantity = quantityMatch ? parseFloat(quantityMatch[1]) : 1;
-    
-    // Remove quantity from the line to get the product details
-    let productText = trimmedLine.replace(/^\d+(\.\d+)?/, '').trim();
-    
-    // Default unit is "יחידה" (units/pieces)
-    let unit = "יחידה";
-    
-    // Check if there's a specific unit mentioned
-    for (const [unitName, pattern] of Object.entries(unitPatterns)) {
-      if (pattern.test(productText)) {
-        unit = unitName;
-        // Don't remove the unit from product text - keep it as part of product description
-        break;
-      }
-    }
-    
-    // Extract product name (everything after quantity)
-    // Make sure we don't remove important specifications
-    const product = productText.trim();
-    
-    if (product) {
-      items.push({
-        quantity, // This is how many the user wants to buy
-        unit,     // Units/pieces by default unless specified
-        product,  // Full product description including specifications
-        confidence: 0.9 // High confidence for simulated parsing
-      });
-    }
-  });
-  
-  return items;
-}
 
-/**
- * Simulate GPT-4 product selection for testing
- * @param {string} prompt - The product selection prompt
- * @returns {string} - Simulated GPT-4 response as JSON
- */
-function simulateProductSelection(prompt) {
-  console.log("Simulating GPT-4 product selection for prompt:", prompt);
-  
-  // Extract the candidate count from the prompt
-  const candidateMatch = prompt.match(/Candidate products:\s+([\s\S]*?)Please analyze/);
-  if (!candidateMatch) return JSON.stringify({ selectedIndex: 0, confidence: 0, reasoning: "No candidates found" });
-  
-  const candidatesText = candidateMatch[1];
-  const candidateCount = (candidatesText.match(/\d+\./g) || []).length;
-  
-  // Randomly select a candidate or none
-  const selectedIndex = candidateCount > 0 
-    ? Math.floor(Math.random() * (candidateCount + 1)) // 0 to candidateCount
-    : 0;
-  
-  const confidence = selectedIndex === 0 
-    ? Math.random() * 0.3 // Low confidence if no selection
-    : 0.7 + (Math.random() * 0.3); // 0.7-1.0 if selected
-  
-  const reasonings = [
-    "This product best matches the name and specifications provided by the user.",
-    "The product name and brand align perfectly with the user's request.",
-    "While not a perfect match, this product is the closest available option.",
-    "The percentage content and brand match exactly what the user requested."
-  ];
-  
-  return JSON.stringify({
-    selectedIndex,
-    confidence: parseFloat(confidence.toFixed(2)),
-    reasoning: selectedIndex > 0 
-      ? reasonings[Math.floor(Math.random() * reasonings.length)]
-      : "None of the products match the user's request closely enough."
-  });
-}
+

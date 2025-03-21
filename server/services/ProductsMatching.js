@@ -1,12 +1,12 @@
 /**
- * Improved product matching algorithm:
+ * Improved product matching algorithm for Supabase:
  * 1. Prioritizes product name matches first
  * 2. Uses additional specifications (%, size, brand) as secondary criteria
  * 3. Properly handles quantity for order items (not for matching)
  */
 
-// Import the database connection
-const { pool } = require('../config/db');
+// Import the Supabase client from database config
+const { supabase } = require('../config/db');
 
 // Thresholds and constants
 const NAME_MATCH_THRESHOLD = 0.5; // Higher threshold for product name matching
@@ -113,13 +113,14 @@ async function findCandidateProducts(item) {
   try {
     console.log(`Finding candidate products for: ${JSON.stringify(item)}`);
     
-    // Get products from database
-    const result = await pool.query(
-      'SELECT * FROM products'
-    );
+    // Get products from Supabase
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('*');
     
-    const products = result.rows;
-    console.log(`Fetched ${products.length} products from database`);
+    if (error) throw error;
+    
+    console.log(`Fetched ${products.length} products from Supabase`);
     
     // Extract specifications from the product name
     const specs = extractSpecifications(item.product);

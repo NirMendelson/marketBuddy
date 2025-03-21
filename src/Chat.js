@@ -73,6 +73,93 @@ const Chat = () => {
   const [showOrderSettings, setShowOrderSettings] = useState(false);
   const messagesEndRef = useRef(null);
   
+  // Creates a new order with all the items currently in the shopping cart
+  const createOrderFromCart = async () => {
+    try {
+      // Only proceed if there are items in the cart
+      const selectedItems = groceryItems.filter(item => item.selected);
+      if (selectedItems.length === 0) {
+        setMessages(msgs => [...msgs, { 
+          text: "העגלה ריקה. אנא הוסף פריטים לפני יצירת הזמנה.", 
+          sender: "ai" 
+        }]);
+        return;
+      }
+  
+      setIsProcessing(true);
+      
+      let orderToUse = currentOrder;
+      
+      // If no order exists yet, create one
+      if (!orderToUse) {
+        const orderResponse = await fetch('/orders', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            supermarket: user?.supermarket || 'רמי לוי',
+            maxParticipants: maxParticipants || 1,
+            deliveryDate: deliveryDate || null
+          })
+        });
+  
+        if (!orderResponse.ok) {
+          const errorData = await orderResponse.json();
+          throw new Error(errorData.error || 'שגיאה ביצירת ההזמנה');
+        }
+  
+        const orderResult = await orderResponse.json();
+        orderToUse = orderResult.order;
+        setCurrentOrder(orderToUse);
+      }
+      
+      // Format the cart items for the API
+      const itemsToAdd = selectedItems.map(item => ({
+        productId: item.productId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        unit: item.unit
+      }));
+      
+      // Only add items that aren't already in the order
+      const itemsResponse = await fetch(`/orders/${orderToUse.order_id}/add-items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ items: itemsToAdd })
+      });
+      
+      if (!itemsResponse.ok) {
+        const errorData = await itemsResponse.json();
+        throw new Error(errorData.error || 'שגיאה בהוספת פריטים להזמנה');
+      }
+      
+      const itemsResult = await itemsResponse.json();
+      
+      // Add success message
+      setMessages(msgs => [...msgs, { 
+        text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
+  מספר פריטים: ${itemsToAdd.length}
+  סופרמרקט: ${orderToUse.supermarket}`, 
+        sender: "ai" 
+      }]);
+      
+    } catch (error) {
+      console.error('Error creating order from cart:', error);
+      setMessages(msgs => [...msgs, { 
+        text: `שגיאה בעדכון הזמנה: ${error.message}`, 
+        sender: "ai" 
+      }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
   // Check if user is authenticated
   useEffect(() => {
     const checkAuth = async () => {
@@ -310,25 +397,6 @@ const Chat = () => {
     
     setGroceryItems(prev => [...prev, newItem]);
     
-    // If we have a current order, add this item to the order in the database
-    if (currentOrder) {
-      try {
-        await addItemsToOrder(currentOrder.order_id, [{
-          productId: selectedOption.id,
-          name: selectedOption.name,
-          quantity: pendingItem.quantity,
-          price: selectedOption.price,
-          unit: selectedOption.unit
-        }]);
-      } catch (error) {
-        console.error("Error adding item to order:", error);
-        // Show error message to user
-        setMessages(msgs => [...msgs, { 
-          text: `שגיאה בהוספת פריט להזמנה: ${error.message}`, 
-          sender: "ai" 
-        }]);
-      }
-    }
     
     // Remove the item from pending options
     setPendingOptions(prev => prev.filter(item => item.id !== itemId));
@@ -380,11 +448,7 @@ const Chat = () => {
 
   // Proceed to checkout (future implementation)
   const handleCheckout = () => {
-    // Future implementation for checkout process
-    setMessages(msgs => [...msgs, { 
-      text: "מעבר לתהליך התשלום... תכונה זו תהיה זמינה בקרוב!", 
-      sender: "ai" 
-    }]);
+    createOrderFromCart();
   };
 
   // Handle logout
