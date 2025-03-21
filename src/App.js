@@ -53,7 +53,6 @@ const App = () => {
 
   return (
     <Router>
-      <Header isAuthenticated={isAuthenticated} onAuthChange={handleAuthChange} />
       <Routes>
         <Route 
           path="/" 

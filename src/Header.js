@@ -1,11 +1,12 @@
+
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { FiUser, FiSettings } from "react-icons/fi";
 import "./Header.css";
 
 const Header = ({ isAuthenticated, onAuthChange }) => {
   const navigate = useNavigate();
 
-  // Handle logout
   const handleLogout = async () => {
     try {
       const response = await fetch('/logout', {
@@ -14,9 +15,7 @@ const Header = ({ isAuthenticated, onAuthChange }) => {
       });
       
       if (response.ok) {
-        // Update authentication state
         onAuthChange(false);
-        // Redirect to home
         navigate('/');
       }
     } catch (error) {
@@ -24,34 +23,30 @@ const Header = ({ isAuthenticated, onAuthChange }) => {
     }
   };
 
+  if (!isAuthenticated) return null;
+
   return (
     <header className="main-header">
       <div className="header-item right">
-        <Link to="/" className="header-link">
-          Market Buddy
+        <Link to="/chat" className="action-btn small">
+          הזמנות
         </Link>
+        <button onClick={handleLogout} className="action-btn small logout">
+          התנתק
+        </button>
+        <button className="user-button" onClick={() => navigate('/chat')} title="הגדרות">
+          <FiSettings size={20} />
+        </button>
+        <button className="user-button" onClick={() => navigate('/chat')} title="פרופיל">
+          <FiUser size={20} />
+        </button>
       </div>
-      
+
       <div className="header-item center">
-        {/* Center content (if needed) */}
+        <Link to="/chat" className="app-name">Market Buddy</Link>
       </div>
-      
-      <div className="header-item left">
-        {isAuthenticated ? (
-          <>
-            <Link to="/chat" className="header-link">
-              הזמנות
-            </Link>
-            <button onClick={handleLogout} className="header-link logout-btn">
-              התנתק
-            </button>
-          </>
-        ) : (
-          <Link to="/" className="header-link">
-            התחבר / הירשם
-          </Link>
-        )}
-      </div>
+
+      <div className="header-item left" />
     </header>
   );
 };

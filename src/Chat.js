@@ -520,20 +520,22 @@ const Chat = () => {
         <div className="cart-items">
           {selectedItems.map(item => (
             <div key={item.id} className="cart-item">
-              <div className="item-info">
-                <div className="item-name">{item.name}</div>
-                <div className="item-details">
-                  {item.quantity} {item.unit} • {item.price}₪
-                </div>
+            <div className="item-info">
+              <div className="item-name">
+                {item.quantity} × {item.name}
               </div>
-              
-              <button 
-                className="remove-item-button" 
-                onClick={() => handleRemoveItem(item.id)}
-              >
-                הסר
-              </button>
+              <div className="item-details">
+                {item.unit} • מחיר ליחידה: {item.price}₪ • סה"כ: {(item.quantity * item.price).toFixed(2)}₪
+              </div>
             </div>
+          
+            <button 
+              className="remove-item-button" 
+              onClick={() => handleRemoveItem(item.id)}
+            >
+              הסר
+            </button>
+          </div>          
           ))}
         </div>
         
@@ -687,7 +689,19 @@ const Chat = () => {
     <div className="app-container">
       <div className="header">
         <div className="app-title">Market Buddy</div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="action-btn small" onClick={() => navigate('/chat')} title="הזמנות">
+            הזמנות
+          </button>
+          <button 
+            className="action-btn small logout" 
+            onClick={handleLogout} 
+            title="התנתק"
+            style={{ backgroundColor: '#dc3545' }}
+          >
+            התנתק
+          </button>
           <button className="user-button" onClick={toggleOrderSettings} title="הגדרות הזמנה">
             <FiSettings size={20} />
           </button>
@@ -696,6 +710,7 @@ const Chat = () => {
           </button>
         </div>
       </div>
+
       
       {hasSubmittedOrder ? (
         // Two-column layout after order submission
