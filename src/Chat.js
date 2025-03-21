@@ -71,6 +71,7 @@ const Chat = () => {
   const [maxParticipants, setMaxParticipants] = useState(1);
   const [deliveryDate, setDeliveryDate] = useState(null);
   const [showOrderSettings, setShowOrderSettings] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false); // Add this state to track auth check
   const messagesEndRef = useRef(null);
   
   // Creates a new order with all the items currently in the shopping cart
@@ -174,12 +175,14 @@ const Chat = () => {
             setUser(data.user);
           } else {
             // Redirect to login if not authenticated
-            navigate('/');
+            navigate('/', { replace: true }); // Use replace to prevent history stacking
           }
         }
       } catch (error) {
         console.error('Error checking authentication:', error);
-        navigate('/');
+        navigate('/', { replace: true }); // Use replace to prevent history stacking
+      } finally {
+        setIsAuthChecked(true); // Mark auth check as complete
       }
     };
     
@@ -458,7 +461,7 @@ const Chat = () => {
         method: 'POST',
         credentials: 'include'
       });
-      navigate('/');
+      navigate('/', { replace: true }); // Use replace to prevent history stacking
     } catch (error) {
       console.error('Error during logout:', error);
     }
@@ -679,11 +682,12 @@ const Chat = () => {
   // Example grocery items with each item on a separate line
   const exampleItems = [
     "2 חלב תנובה 3%",
-    "1 מקופלת עילית",
-    "3 יוגורט תות",
-    "1 גבינה לבנה 5% 300 גרם",
-    "1 לחם אחיד פרוס"
   ];
+
+  // If authentication check is still in progress, show loading
+  if (!isAuthChecked) {
+    return <div className="loading-container">טוען...</div>;
+  }
 
   return (
     <div className="app-container">
@@ -691,7 +695,7 @@ const Chat = () => {
         <div className="app-title">Market Buddy</div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button className="action-btn small" onClick={() => navigate('/chat')} title="הזמנות">
+          <button className="action-btn small" onClick={() => navigate('/chat', { replace: true })} title="הזמנות">
             הזמנות
           </button>
           <button 

@@ -1,5 +1,7 @@
 const { processItemsWithHybridMatching } = require("./ProductsMatching");
 
+require('dotenv').config();
+
 /**
  * Process a grocery list message using Azure OpenAI API with hybrid matching
  * @param {string} message - The user's grocery list message

@@ -6,6 +6,9 @@ const session = require("express-session");
 const app = express();
 const { supabase, pool, initializeDatabase } = require('./config/db');
 const { processGroceryList } = require('./services/GPT4API');
+const { findNearbyUsers } = require('./services/NearbyUsers');
+const { sendEmail } = require('./services/email'); 
+
 
 // Initialize database
 initializeDatabase();
@@ -60,7 +63,6 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
       .select();
 
     if (orderError) throw orderError;
-    
     if (!orderData || orderData.length === 0) {
       throw new Error('Failed to create order');
     }
@@ -79,12 +81,41 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
 
     if (participantError) throw participantError;
 
+    // 🧭 Check for nearby users
+    const nearbyUsers = await findNearbyUsers(userEmail);
+
+    if (nearbyUsers.length > 0) {
+      console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
+
+      for (const user of nearbyUsers) {
+        await sendEmail(
+          user.email,
+          '🚀 הזמנה חדשה קרובה אליך!',
+          `שלום,
+
+משתמש באזור שלך יצר הזמנה חדשה ב-${supermarket}.  
+אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+
+📍 מיקום: ${user.distance} מטר ממך  
+🛒 הזמנה מסופרמרקט: ${supermarket}  
+
+[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
+
+בברכה,  
+צוות MarketBuddy`
+        );
+      }
+    } else {
+      console.log(`📍 No nearby users found for ${userEmail}`);
+    }
+
     return order;
   } catch (error) {
     console.error('Error creating order:', error);
     throw error;
   }
 }
+
 
 /**
  * Add items to an order

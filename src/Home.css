@@ -1,7 +1,7 @@
 /* General Body Styling */
 body {
     margin: 0;
-    background-color: #d8dcd6;
+    background-color: #d8dcd6 !important;
     font-family: "Assistant", sans-serif;
 }
 
