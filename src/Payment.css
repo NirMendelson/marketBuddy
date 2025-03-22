@@ -1,0 +1,22 @@
+.payment-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 80px auto;
+    padding: 2rem;
+    max-width: 500px;
+    background-color: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    font-family: "Assistant", sans-serif;
+    direction: rtl;
+  }
+  
+  .payment-title {
+    font-size: 1.5rem;
+    color: #416655;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  

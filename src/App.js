@@ -3,6 +3,7 @@ import { HashRouter as Router, Route, Routes, Navigate } from "react-router-dom"
 import Home from "./Home";
 import Header from "./Header";
 import Chat from "./Chat";
+import Payment from './Payment';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -69,6 +70,14 @@ const App = () => {
               <Chat />
             </ProtectedRoute>
           } 
+        />
+        <Route
+          path="/payment" 
+          element={
+            <ProtectedRoute>
+              <Payment orderTotal={100.00} /> {/* You'll want to pass the actual total */}
+            </ProtectedRoute>
+          }
         />
       </Routes>
     </Router>

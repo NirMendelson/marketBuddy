@@ -143,12 +143,15 @@ const Chat = () => {
       
       // Add success message
       setMessages(msgs => [...msgs, { 
-        text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
-  מספר פריטים: ${itemsToAdd.length}
-  סופרמרקט: ${orderToUse.supermarket}`, 
-        sender: "ai" 
+              text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
+        מספר פריטים: ${itemsToAdd.length}
+        סופרמרקט: ${orderToUse.supermarket}`, 
+              sender: "ai" 
       }]);
       
+      //Navigate to Payment if order is proccessed
+      navigate('/payment');
+
     } catch (error) {
       console.error('Error creating order from cart:', error);
       setMessages(msgs => [...msgs, { 
@@ -160,6 +163,8 @@ const Chat = () => {
     }
   };
   
+  
+
   // Check if user is authenticated
   useEffect(() => {
     const checkAuth = async () => {
@@ -508,8 +513,11 @@ const Chat = () => {
       );
     }
     
-    const total = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
+    const deliveryFee = 30.0;
+    const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const total = subtotal + deliveryFee;
+   
+
     return (
       <div className="grocery-cart">
         <div className="cart-header">
@@ -540,7 +548,9 @@ const Chat = () => {
         </div>
         
         <div className="cart-footer">
-          <div className="cart-total">סה"כ: {total.toFixed(2)}₪</div>
+          <div className="cart-total">סכום ביניים: {subtotal.toFixed(2)}₪</div>
+          <div className="cart-total">דמי משלוח: {deliveryFee.toFixed(2)}₪</div>
+          <div className="cart-total">סה"כ לתשלום: {total.toFixed(2)}₪</div>
           <div className="cart-actions">
             <button className="add-item-button" onClick={handleAddAnotherItem}>
               <FiPlus size={16} /> הוסף פריט נוסף
@@ -684,6 +694,17 @@ const Chat = () => {
     "1 גבינה לבנה 5% 300 גרם",
     "1 לחם אחיד פרוס"
   ];
+
+  useEffect(() => {
+    const deliveryFee = 30.0;
+    const subtotal = groceryItems
+      .filter(item => item.selected)
+      .reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const total = subtotal + deliveryFee;
+  
+    localStorage.setItem("orderTotal", total.toFixed(2));
+  }, [groceryItems]);
+  
 
   return (
     <div className="app-container">

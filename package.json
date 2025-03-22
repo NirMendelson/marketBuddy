@@ -4,6 +4,7 @@
   "private": true,
   "homepage": "https://marketbuddy.dev/",
   "dependencies": {
+    "@paypal/react-paypal-js": "^8.8.2",
     "@supabase/supabase-js": "^2.49.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
