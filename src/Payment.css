@@ -3,14 +3,22 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+<<<<<<< Updated upstream
     margin: 80px auto;
     padding: 2rem;
     max-width: 500px;
+=======
+    min-height: 80vh;
+    padding: 2rem;
+    max-width: 500px;
+    margin: 0 auto;
+>>>>>>> Stashed changes
     background-color: #ffffff;
     border-radius: 16px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
     font-family: "Assistant", sans-serif;
     direction: rtl;
+<<<<<<< Updated upstream
   }
   
   .payment-title {
@@ -19,4 +27,32 @@
     margin-bottom: 1.5rem;
     text-align: center;
   }
+=======
+    transition: all 0.3s ease-in-out;
+  }
+  
+  body {
+    background: linear-gradient(to bottom right, #f2f7f5, #dfeeea);
+    margin: 0;
+    font-family: "Assistant", sans-serif;
+  }
+  
+  .payment-title {
+    font-size: 1.8rem;
+    color: #416655;
+    margin-bottom: 2rem;
+    text-align: center;
+  }
+  
+  @media (max-width: 600px) {
+    .payment-container {
+      padding: 1.5rem;
+      width: 90%;
+    }
+  
+    .payment-title {
+      font-size: 1.5rem;
+    }
+  }
+>>>>>>> Stashed changes
   

@@ -68,13 +68,11 @@ const Chat = () => {
   const [hasSubmittedOrder, setHasSubmittedOrder] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(null);
   const [user, setUser] = useState(null);
-  const [maxParticipants, setMaxParticipants] = useState(1);
-  const [deliveryDate, setDeliveryDate] = useState(null);
   const [showOrderSettings, setShowOrderSettings] = useState(false);
   const messagesEndRef = useRef(null);
   
   // Creates a new order with all the items currently in the shopping cart
-  const createOrderFromCart = async () => {
+  const createOrderFromCart = async (orderMaxParticipants, orderDeliveryDate) => {
     try {
       // Only proceed if there are items in the cart
       const selectedItems = groceryItems.filter(item => item.selected);
@@ -87,9 +85,9 @@ const Chat = () => {
       }
   
       setIsProcessing(true);
-      
+  
       let orderToUse = currentOrder;
-      
+  
       // If no order exists yet, create one
       if (!orderToUse) {
         const orderResponse = await fetch('/orders', {
@@ -100,8 +98,8 @@ const Chat = () => {
           credentials: 'include',
           body: JSON.stringify({
             supermarket: user?.supermarket || 'רמי לוי',
-            maxParticipants: maxParticipants || 1,
-            deliveryDate: deliveryDate || null
+            maxParticipants: orderMaxParticipants,
+            deliveryDate: orderDeliveryDate
           })
         });
   
@@ -113,8 +111,9 @@ const Chat = () => {
         const orderResult = await orderResponse.json();
         orderToUse = orderResult.order;
         setCurrentOrder(orderToUse);
+        setHasSubmittedOrder(true); // now correctly triggered only after order created
       }
-      
+  
       // Format the cart items for the API
       const itemsToAdd = selectedItems.map(item => ({
         productId: item.productId,
@@ -123,8 +122,8 @@ const Chat = () => {
         price: item.price,
         unit: item.unit
       }));
-      
-      // Only add items that aren't already in the order
+  
+      // Add items to the order
       const itemsResponse = await fetch(`/orders/${orderToUse.order_id}/add-items`, {
         method: 'POST',
         headers: {
@@ -133,14 +132,14 @@ const Chat = () => {
         credentials: 'include',
         body: JSON.stringify({ items: itemsToAdd })
       });
-      
+  
       if (!itemsResponse.ok) {
         const errorData = await itemsResponse.json();
         throw new Error(errorData.error || 'שגיאה בהוספת פריטים להזמנה');
       }
-      
+  
       const itemsResult = await itemsResponse.json();
-      
+  
       // Add success message
       setMessages(msgs => [...msgs, { 
               text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
@@ -148,10 +147,16 @@ const Chat = () => {
         סופרמרקט: ${orderToUse.supermarket}`, 
               sender: "ai" 
       }]);
+<<<<<<< Updated upstream
       
       //Navigate to Payment if order is proccessed
       navigate('/payment');
 
+=======
+
+    navigate('/payment');
+  
+>>>>>>> Stashed changes
     } catch (error) {
       console.error('Error creating order from cart:', error);
       setMessages(msgs => [...msgs, { 
@@ -164,7 +169,10 @@ const Chat = () => {
   };
   
   
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
   // Check if user is authenticated
   useEffect(() => {
     const checkAuth = async () => {
@@ -231,8 +239,8 @@ const Chat = () => {
         console.log("Creating order with grocery list:", formattedMessage);
         const apiResponse = await processGroceryList(
           formattedMessage,
-          maxParticipants,
-          deliveryDate
+          1, // default fallback
+          null // delivery not set yet during parsing
         );
         
         // Set the current order
@@ -451,10 +459,7 @@ const Chat = () => {
     document.querySelector(".chat-input").focus();
   };
 
-  // Proceed to checkout (future implementation)
-  const handleCheckout = () => {
-    createOrderFromCart();
-  };
+  
 
   // Handle logout
   const handleLogout = async () => {
@@ -497,6 +502,14 @@ const Chat = () => {
 
   // Create a component for displaying the grocery cart
   const GroceryCart = () => {
+    
+    const [orderMaxParticipants, setOrderMaxParticipants] = useState(1);
+    const [orderDeliveryDate, setOrderDeliveryDate] = useState(() => {
+      const now = new Date(Date.now() + 3600000); // 1 hour from now
+      return now.toISOString().slice(0, 16); // format to datetime-local input
+    });
+
+    
     const selectedItems = groceryItems.filter(item => item.selected);
     
     if (selectedItems.length === 0) {
@@ -513,10 +526,19 @@ const Chat = () => {
       );
     }
     
+<<<<<<< Updated upstream
     const deliveryFee = 30.0;
     const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const total = subtotal + deliveryFee;
    
+=======
+    const total = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    
+    // Proceed to checkout (future implementation)
+    const handleCheckout = () => {
+    createOrderFromCart(orderMaxParticipants, orderDeliveryDate);
+    };
+>>>>>>> Stashed changes
 
     return (
       <div className="grocery-cart">
@@ -548,9 +570,37 @@ const Chat = () => {
         </div>
         
         <div className="cart-footer">
+<<<<<<< Updated upstream
           <div className="cart-total">סכום ביניים: {subtotal.toFixed(2)}₪</div>
           <div className="cart-total">דמי משלוח: {deliveryFee.toFixed(2)}₪</div>
           <div className="cart-total">סה"כ לתשלום: {total.toFixed(2)}₪</div>
+=======
+          <div className="cart-total">סה"כ: {total.toFixed(2)}₪</div>
+          <div className="form-group">
+            <label htmlFor="orderMaxParticipants">משתתפים מקסימליים:</label>
+            <select
+              id="orderMaxParticipants"
+              value={orderMaxParticipants}
+              onChange={(e) => setOrderMaxParticipants(parseInt(e.target.value))}
+              className="settings-input"
+            >
+              {[1, 2, 3, 4].map(num => (
+                <option key={num} value={num}>{num}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginTop: '10px' }}>
+            <label htmlFor="orderDeliveryDate">תאריך משלוח:</label>
+            <input
+              type="datetime-local"
+              id="orderDeliveryDate"
+              value={orderDeliveryDate}
+              onChange={(e) => setOrderDeliveryDate(e.target.value)}
+              min={new Date(Date.now() + 3600000).toISOString().slice(0, 16)} // 1 hour in the future
+              className="settings-input"
+            />
+          </div>
+>>>>>>> Stashed changes
           <div className="cart-actions">
             <button className="add-item-button" onClick={handleAddAnotherItem}>
               <FiPlus size={16} /> הוסף פריט נוסף
@@ -654,31 +704,7 @@ const Chat = () => {
         <div className="user-info-content">
           <h3>הגדרות הזמנה</h3>
           
-          <div className="form-group" style={{ marginBottom: '15px' }}>
-            <label htmlFor="maxParticipants">מספר משתתפים מקסימלי:</label>
-            <select 
-              id="maxParticipants" 
-              value={maxParticipants}
-              onChange={(e) => setMaxParticipants(parseInt(e.target.value))}
-              className="settings-input"
-            >
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-            </select>
-          </div>
-          
-          <div className="form-group" style={{ marginBottom: '15px' }}>
-            <label htmlFor="deliveryDate">תאריך משלוח:</label>
-            <input 
-              id="deliveryDate" 
-              type="datetime-local" 
-              value={deliveryDate || ''}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-              className="settings-input"
-            />
-          </div>
+          <p style={{ textAlign: 'center' }}>הגדרות אישיות יתווספו בקרוב.</p>
           
           <button className="close-button" onClick={toggleOrderSettings}>שמור</button>
         </div>
