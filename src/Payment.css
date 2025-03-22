@@ -4,20 +4,27 @@
     align-items: center;
     justify-content: center;
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
     margin: 80px auto;
     padding: 2rem;
     max-width: 500px;
 =======
+=======
+>>>>>>> Stashed changes
     min-height: 80vh;
     padding: 2rem;
     max-width: 500px;
     margin: 0 auto;
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     background-color: #ffffff;
     border-radius: 16px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
     font-family: "Assistant", sans-serif;
     direction: rtl;
+<<<<<<< Updated upstream
 <<<<<<< Updated upstream
   }
   
@@ -28,6 +35,8 @@
     text-align: center;
   }
 =======
+=======
+>>>>>>> Stashed changes
     transition: all 0.3s ease-in-out;
   }
   
@@ -54,5 +63,8 @@
       font-size: 1.5rem;
     }
   }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   

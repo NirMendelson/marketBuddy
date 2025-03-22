@@ -148,10 +148,16 @@ const Chat = () => {
               sender: "ai" 
       }]);
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
       
       //Navigate to Payment if order is proccessed
       navigate('/payment');
 
+=======
+
+    navigate('/payment');
+  
+>>>>>>> Stashed changes
 =======
 
     navigate('/payment');
@@ -170,7 +176,10 @@ const Chat = () => {
   
   
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
   // Check if user is authenticated
@@ -538,6 +547,9 @@ const Chat = () => {
     const handleCheckout = () => {
     createOrderFromCart(orderMaxParticipants, orderDeliveryDate);
     };
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
     return (
@@ -600,6 +612,9 @@ const Chat = () => {
               className="settings-input"
             />
           </div>
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
           <div className="cart-actions">
             <button className="add-item-button" onClick={handleAddAnotherItem}>
