@@ -3,17 +3,8 @@ import { HashRouter as Router, Route, Routes, Navigate } from "react-router-dom"
 import Home from "./Home";
 import Header from "./Header";
 import Chat from "./Chat";
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 import Payment from './Payment';
-=======
-import Payment from "./Payment";
 
->>>>>>> Stashed changes
-=======
-import Payment from "./Payment";
-
->>>>>>> Stashed changes
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -81,18 +72,6 @@ const App = () => {
             </ProtectedRoute>
           } 
         />
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-        <Route
-          path="/payment" 
-          element={
-            <ProtectedRoute>
-              <Payment orderTotal={100.00} /> {/* You'll want to pass the actual total */}
-            </ProtectedRoute>
-          }
-=======
-=======
->>>>>>> Stashed changes
         <Route 
           path="/payment" 
           element={
@@ -100,10 +79,6 @@ const App = () => {
               <Payment />
             </ProtectedRoute>
           } 
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
         />
       </Routes>
     </Router>

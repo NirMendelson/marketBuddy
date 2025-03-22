@@ -147,22 +147,11 @@ const Chat = () => {
         סופרמרקט: ${orderToUse.supermarket}`, 
               sender: "ai" 
       }]);
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
+
       
       //Navigate to Payment if order is proccessed
       navigate('/payment');
 
-=======
-
-    navigate('/payment');
-  
->>>>>>> Stashed changes
-=======
-
-    navigate('/payment');
-  
->>>>>>> Stashed changes
     } catch (error) {
       console.error('Error creating order from cart:', error);
       setMessages(msgs => [...msgs, { 
@@ -175,13 +164,6 @@ const Chat = () => {
   };
   
   
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
   // Check if user is authenticated
   useEffect(() => {
     const checkAuth = async () => {
@@ -535,22 +517,15 @@ const Chat = () => {
       );
     }
     
-<<<<<<< Updated upstream
+
     const deliveryFee = 30.0;
     const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const total = subtotal + deliveryFee;
-   
-=======
-    const total = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     
     // Proceed to checkout (future implementation)
     const handleCheckout = () => {
     createOrderFromCart(orderMaxParticipants, orderDeliveryDate);
     };
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
     return (
       <div className="grocery-cart">
@@ -582,11 +557,9 @@ const Chat = () => {
         </div>
         
         <div className="cart-footer">
-<<<<<<< Updated upstream
           <div className="cart-total">סכום ביניים: {subtotal.toFixed(2)}₪</div>
           <div className="cart-total">דמי משלוח: {deliveryFee.toFixed(2)}₪</div>
           <div className="cart-total">סה"כ לתשלום: {total.toFixed(2)}₪</div>
-=======
           <div className="cart-total">סה"כ: {total.toFixed(2)}₪</div>
           <div className="form-group">
             <label htmlFor="orderMaxParticipants">משתתפים מקסימליים:</label>
@@ -612,10 +585,6 @@ const Chat = () => {
               className="settings-input"
             />
           </div>
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
           <div className="cart-actions">
             <button className="add-item-button" onClick={handleAddAnotherItem}>
               <FiPlus size={16} /> הוסף פריט נוסף
