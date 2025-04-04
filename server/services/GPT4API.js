@@ -8,10 +8,10 @@ const envPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: envPath, override: true });
 
 // Use environment variables
-const AZURE_OPENAI_ENDPOINT = "https://marketbuddyai.openai.azure.com";
-const AZURE_OPENAI_KEY = "9rxEofsAl9C8gp6CufYSwzG15JlSsOwrHm3LUDIn6z9X0g7RUKpmJQQJ99BCACYeBjFXJ3w3AAABACOGZoK9";
-const AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
-const AZURE_OPENAI_VERSION = "2023-05-15";
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT;
+const AZURE_OPENAI_KEY = process.env.AZURE_OPENAI_KEY;
+const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT;
+const AZURE_OPENAI_VERSION = process.env.AZURE_OPENAI_VERSION;
 
 /**
  * Process a grocery list message using Azure OpenAI API with hybrid matching
