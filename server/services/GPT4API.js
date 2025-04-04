@@ -1,6 +1,17 @@
 const { processItemsWithHybridMatching } = require("./ProductsMatching");
+const fetch = require('node-fetch');
+const path = require('path');
+const dotenv = require('dotenv');
 
-require('dotenv').config();
+// Load environment variables from the root .env file
+const envPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: envPath, override: true });
+
+// Use environment variables
+const AZURE_OPENAI_ENDPOINT = "https://marketbuddyai.openai.azure.com";
+const AZURE_OPENAI_KEY = "9rxEofsAl9C8gp6CufYSwzG15JlSsOwrHm3LUDIn6z9X0g7RUKpmJQQJ99BCACYeBjFXJ3w3AAABACOGZoK9";
+const AZURE_OPENAI_DEPLOYMENT = "gpt-4o-mini";
+const AZURE_OPENAI_VERSION = "2023-05-15";
 
 /**
  * Process a grocery list message using Azure OpenAI API with hybrid matching
@@ -12,11 +23,11 @@ exports.processGroceryList = async (message) => {
     console.log(`Processing grocery list with hybrid matching: ${message}`);
     
     // STEP 1: Validate environment variables for Azure OpenAI
-    if (!process.env.AZURE_OPENAI_ENDPOINT || !process.env.AZURE_OPENAI_KEY || !process.env.AZURE_OPENAI_DEPLOYMENT) {
+    if (!AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_KEY || !AZURE_OPENAI_DEPLOYMENT) {
       console.error("⛔ Missing Azure OpenAI configuration:");
-      if (!process.env.AZURE_OPENAI_ENDPOINT) console.error("- AZURE_OPENAI_ENDPOINT is not set");
-      if (!process.env.AZURE_OPENAI_KEY) console.error("- AZURE_OPENAI_KEY is not set");
-      if (!process.env.AZURE_OPENAI_DEPLOYMENT) console.error("- AZURE_OPENAI_DEPLOYMENT is not set");
+      if (!AZURE_OPENAI_ENDPOINT) console.error("- AZURE_OPENAI_ENDPOINT is not set");
+      if (!AZURE_OPENAI_KEY) console.error("- AZURE_OPENAI_KEY is not set");
+      if (!AZURE_OPENAI_DEPLOYMENT) console.error("- AZURE_OPENAI_DEPLOYMENT is not set");
       throw new Error("Missing Azure OpenAI configuration. Please check your environment variables.");
     }
     
@@ -64,11 +75,11 @@ async function parseGroceryListWithGPT(message) {
   
   // Log API configuration (partially masked for security)
   console.log(`Azure OpenAI Configuration:`);
-  console.log(`- Endpoint: ${process.env.AZURE_OPENAI_ENDPOINT.substring(0, 15)}...`);
-  console.log(`- Deployment: ${process.env.AZURE_OPENAI_DEPLOYMENT}`);
-  console.log(`- API Key: ${process.env.AZURE_OPENAI_KEY.substring(0, 5)}...`);
+  console.log(`- Endpoint: ${AZURE_OPENAI_ENDPOINT}`);
+  console.log(`- Deployment: ${AZURE_OPENAI_DEPLOYMENT}`);
+  console.log(`- API Version: ${AZURE_OPENAI_VERSION}`);
   
-  const apiUrl = `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=2023-05-15`;
+  const apiUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_VERSION}`;
   console.log(`Making request to: ${apiUrl}`);
   
   // Try to call the Azure OpenAI API, but fall back to a simulated response if it fails
@@ -78,7 +89,7 @@ async function parseGroceryListWithGPT(message) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.AZURE_OPENAI_KEY
+        'api-key': AZURE_OPENAI_KEY
       },
       body: JSON.stringify({
         messages: [
@@ -167,14 +178,14 @@ async function parseGroceryListWithGPT(message) {
 async function callGPT4ForProductSelection(prompt) {
   console.log("Calling Azure OpenAI for product selection...");
   
-  const apiUrl = `${process.env.AZURE_OPENAI_ENDPOINT}/openai/deployments/${process.env.AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=2023-05-15`;
+  const apiUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_VERSION}`;
   
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'api-key': process.env.AZURE_OPENAI_KEY
+        'api-key': AZURE_OPENAI_KEY
       },
       body: JSON.stringify({
         messages: [

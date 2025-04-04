@@ -5,6 +5,24 @@ import './Payment.css';
 
 const Payment = () => {
   const total = parseFloat(localStorage.getItem("orderTotal") || "0");
+  const orderId = localStorage.getItem("currentOrderId");
+
+  const notifyNearbyUsers = async () => {
+    try {
+      const response = await fetch(`/orders/${orderId}/notify-nearby`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to notify nearby users');
+      }
+
+      console.log('Nearby users notified successfully');
+    } catch (error) {
+      console.error('Error notifying nearby users:', error);
+    }
+  };
 
   return (
     <div className="payment-container">
@@ -24,17 +42,25 @@ const Payment = () => {
               }]
             });
           }}
-          onApprove={(data, actions) => {
-            return actions.order.capture().then(details => {
+          onApprove={async (data, actions) => {
+            try {
+              const details = await actions.order.capture();
               alert(`תשלום הושלם ע״י ${details.payer.name.given_name}`);
-              // Optionally redirect here
-            });
+              
+              // Notify nearby users after successful payment
+              await notifyNearbyUsers();
+              
+              // Redirect to chat page
+              window.location.href = '/chat';
+            } catch (error) {
+              console.error('Error in payment approval:', error);
+              alert('אירעה שגיאה בעיבוד התשלום. אנא נסה שוב.');
+            }
           }}
         />
       </PayPalScriptProvider>
     </div>
   );
-  
 };
 
 export default Payment;

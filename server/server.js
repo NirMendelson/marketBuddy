@@ -81,34 +81,6 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
 
     if (participantError) throw participantError;
 
-    // 🧭 Check for nearby users
-    const nearbyUsers = await findNearbyUsers(userEmail);
-
-    if (nearbyUsers.length > 0) {
-      console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
-
-      for (const user of nearbyUsers) {
-        await sendEmail(
-          user.email,
-          '🚀 הזמנה חדשה קרובה אליך!',
-          `שלום,
-
-משתמש באזור שלך יצר הזמנה חדשה ב-${supermarket}.  
-אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
-
-📍 מיקום: ${user.distance} מטר ממך  
-🛒 הזמנה מסופרמרקט: ${supermarket}  
-
-[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
-
-בברכה,  
-צוות MarketBuddy`
-        );
-      }
-    } else {
-      console.log(`📍 No nearby users found for ${userEmail}`);
-    }
-
     return order;
   } catch (error) {
     console.error('Error creating order:', error);
@@ -424,92 +396,8 @@ app.post('/orders/process-list', isAuthenticated, async (req, res) => {
     
     console.log("Processing grocery list:", message);
     
-    // Create mock data for development/testing when database is not set up yet
-    const mockProductsData = [
-      {
-        product_id: 1,
-        name: 'חלב תנובה 3%',
-        brand: 'תנובה',
-        size: 1,
-        unit_measure: 'ליטר',
-        price: 6.90
-      },
-      {
-        product_id: 2,
-        name: 'מקופלת עילית',
-        brand: 'עלית',
-        size: 100,
-        unit_measure: 'גרם',
-        price: 5.50
-      },
-      {
-        product_id: 3,
-        name: 'יוגורט תות',
-        brand: 'תנובה',
-        size: 150,
-        unit_measure: 'גרם',
-        price: 4.20
-      },
-      {
-        product_id: 4,
-        name: 'גבינה לבנה 5%',
-        brand: 'טרה',
-        size: 300,
-        unit_measure: 'גרם',
-        price: 7.80
-      },
-      {
-        product_id: 5,
-        name: 'לחם אחיד פרוס',
-        brand: 'אנגל',
-        size: 750,
-        unit_measure: 'גרם',
-        price: 8.90
-      }
-    ];
-    
-    // Check if products table exists
-    const { count, error: checkError } = await supabase
-      .from('products')
-      .select('*', { count: 'exact', head: true });
-      
-    // If no products table or it's empty, create it and add mock data
-    if (checkError || count === 0) {
-      console.log("Products table is empty or doesn't exist, adding mock data");
-      
-      // Create the products table if it doesn't exist
-      // Note: In a real app, this would be done via migrations
-      try {
-        await supabase.schema.dropTable('products', { ifExists: true });
-        await supabase.schema.createTable('products', {
-          id: { type: 'serial', primaryKey: true, renameTo: 'product_id' },
-          name: { type: 'text', notNull: true },
-          brand: { type: 'text' },
-          size: { type: 'float' },
-          unit_measure: { type: 'text' },
-          price: { type: 'float', notNull: true }
-        });
-      } catch (schemaError) {
-        console.log("Couldn't create schema, trying to insert data anyway:", schemaError);
-      }
-      
-      // Insert mock data
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert(mockProductsData);
-      
-      if (insertError) {
-        console.error("Error inserting mock products:", insertError);
-      }
-    }
-    
-    // Process the grocery list with mock behavior for development
-    // Note: The actual processGroceryList should work with the products from the database
-    let processedList;
-    
-    processedList = await processGroceryList(message);
-    
-    console.log("Processed list:", processedList);
+    // Process the grocery list using GPT4API
+    const processedList = await processGroceryList(message);
     
     // Create a new order
     const order = await createOrder(
@@ -520,15 +408,20 @@ app.post('/orders/process-list', isAuthenticated, async (req, res) => {
       deliveryDate ? new Date(deliveryDate) : null
     );
     
-    let orderItems = [];
-    
-    // Return the order data along with processed items (both certain and uncertain)
+    // Return the processed list and order details
     res.json({
       order: {
         ...order,
-        items: orderItems
+        items: [] // Items will be added later when user selects them
       },
-      groceryList: processedList
+      groceryList: {
+        items: processedList.items.map(item => ({
+          confidence: item.confidence,
+          product: item.product,
+          quantity: item.quantity,
+          unit: item.unit
+        }))
+      }
     });
   } catch (error) {
     console.error('Error processing grocery list:', error);
@@ -621,6 +514,64 @@ app.post('/api/process-grocery-list', async (req, res) => {
   } catch (error) {
     console.error('Error processing grocery list:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new endpoint to notify nearby users after payment
+app.post('/orders/:orderId/notify-nearby', isAuthenticated, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userEmail = req.session.user.email;
+
+    // Get order details
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .single();
+
+    if (orderError) throw orderError;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Check if user is the creator of the order
+    if (order.user_email !== userEmail) {
+      return res.status(403).json({ error: 'Not authorized to notify for this order' });
+    }
+
+    // Find nearby users
+    const nearbyUsers = await findNearbyUsers(userEmail);
+
+    if (nearbyUsers.length > 0) {
+      console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
+
+      for (const user of nearbyUsers) {
+        await sendEmail(
+          user.email,
+          '🚀 הזמנה חדשה קרובה אליך!',
+          `שלום,
+
+משתמש באזור שלך יצר הזמנה חדשה ב-${order.supermarket}.  
+אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+
+📍 מיקום: ${user.distance} מטר ממך  
+🛒 הזמנה מסופרמרקט: ${order.supermarket}  
+
+[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
+
+בברכה,  
+צוות MarketBuddy`
+        );
+      }
+    } else {
+      console.log(`📍 No nearby users found for ${userEmail}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error notifying nearby users:', error);
+    res.status(500).json({ error: 'Failed to notify nearby users' });
   }
 });
 

@@ -99,7 +99,8 @@ const Chat = () => {
           body: JSON.stringify({
             supermarket: user?.supermarket || 'רמי לוי',
             maxParticipants: orderMaxParticipants,
-            deliveryDate: orderDeliveryDate
+            deliveryDate: orderDeliveryDate,
+            notifyNearbyUsers: false // Don't notify nearby users yet
           })
         });
   
@@ -111,7 +112,7 @@ const Chat = () => {
         const orderResult = await orderResponse.json();
         orderToUse = orderResult.order;
         setCurrentOrder(orderToUse);
-        setHasSubmittedOrder(true); // now correctly triggered only after order created
+        setHasSubmittedOrder(true);
       }
   
       // Format the cart items for the API
@@ -142,16 +143,18 @@ const Chat = () => {
   
       // Add success message
       setMessages(msgs => [...msgs, { 
-              text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
-        מספר פריטים: ${itemsToAdd.length}
-        סופרמרקט: ${orderToUse.supermarket}`, 
-              sender: "ai" 
+        text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
+מספר פריטים: ${itemsToAdd.length}
+סופרמרקט: ${orderToUse.supermarket}`, 
+        sender: "ai" 
       }]);
-
       
-      //Navigate to Payment if order is proccessed
+      // Store order ID in localStorage for payment page
+      localStorage.setItem("currentOrderId", orderToUse.order_id);
+      
+      // Navigate to Payment
       navigate('/payment');
-
+  
     } catch (error) {
       console.error('Error creating order from cart:', error);
       setMessages(msgs => [...msgs, { 
@@ -199,13 +202,38 @@ const Chat = () => {
 
   const handleSend = async () => {
     if (message.trim() !== "") {
+      console.log('Starting handleSend with message:', message);
+      
+      // Set hasSubmittedOrder to true when first message is sent
+      if (!hasSubmittedOrder) {
+        setHasSubmittedOrder(true);
+      }
+      
       // Add user message to chat
       const userMessage = message;
       setMessages([...messages, { text: userMessage, sender: "user" }]);
       setMessage(""); // Clear input field immediately for better UX
       
-      // Set the flag that user has submitted an order
-      setHasSubmittedOrder(true);
+      // Check if user wants to finish the order
+      if (userMessage.toLowerCase() === 'סיים') {
+        console.log('User requested to finish order');
+        if (groceryItems.length === 0) {
+          setMessages(msgs => [...msgs, { 
+            text: "אין פריטים בעגלה. אנא הוסף פריטים לפני סיום ההזמנה.", 
+            sender: "ai" 
+          }]);
+          return;
+        }
+        
+        // Show delivery time options
+        const deliveryOptions = generateDeliveryOptions();
+        setMessages(msgs => [...msgs, { 
+          text: "בחר זמן משלוח:\n" + deliveryOptions, 
+          sender: "ai",
+          isDeliveryOptions: true
+        }]);
+        return;
+      }
       
       setIsProcessing(true);
       
@@ -213,49 +241,49 @@ const Chat = () => {
       const thinkingMsgId = Date.now().toString();
       
       try {
-        // Add a "thinking" message
-        setMessages(msgs => [...msgs, { 
-          id: thinkingMsgId,
-          text: "מתחבר ל-Azure OpenAI API... מעבד את הרשימה שלך...", 
-          sender: "ai",
-          isProcessing: true
-        }]);
+        console.log('Calling processGroceryList API with message:', userMessage);
         
-        // Format the message to ensure it's properly processed
-        // Replace commas followed by space with newlines to standardize format
-        // This helps the API process comma-separated lists properly
-        const formattedMessage = userMessage.replace(/,\s+/g, '\n');
-        
-        // Call API to process grocery list and create an order
-        console.log("Creating order with grocery list:", formattedMessage);
+        // Call API to process grocery list
         const apiResponse = await processGroceryList(
-          formattedMessage,
-          1, // default fallback
-          null // delivery not set yet during parsing
+          userMessage,
+          1,
+          null
         );
+        
+        console.log('API Response:', apiResponse);
         
         // Set the current order
         setCurrentOrder(apiResponse.order);
         
-        // Log the full structured response to console
-        console.log("API Processing Results:", apiResponse);
-        
         // Get the processed items from the API response
         const aiResponse = apiResponse.groceryList;
-        
-        // Remove the "thinking" message
-        setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
+        console.log('AI Response:', aiResponse);
         
         if (aiResponse.items && aiResponse.items.length > 0) {
-          // Separate items into categories:
-          // 1. Certain matches (directly add to cart)
-          const certain = aiResponse.items.filter(item => item.isCertain);
+          console.log('Processing items:', aiResponse.items);
           
-          // 2. Items with potential matches but need user selection
-          const uncertain = aiResponse.items.filter(item => !item.isCertain && item.matchedProducts && item.matchedProducts.length > 0);
+          // Convert the response format to match what the frontend expects
+          const processedItems = aiResponse.items.map(item => ({
+            isCertain: item.confidence >= 0.8,
+            matchedProducts: [{
+              name: item.product,
+              unit: item.unit,
+              price: 0, // Will be updated when we get the actual product data
+              id: null
+            }],
+            product: item.product,
+            quantity: item.quantity,
+            unit: item.unit
+          }));
           
-          // 3. Items that couldn't be matched at all
-          const notFound = aiResponse.items.filter(item => !item.isCertain && (!item.matchedProducts || item.matchedProducts.length === 0));
+          console.log('Processed items:', processedItems);
+          
+          // Separate items into categories
+          const certain = processedItems.filter(item => item.isCertain);
+          const uncertain = processedItems.filter(item => !item.isCertain && item.matchedProducts && item.matchedProducts.length > 0);
+          const notFound = processedItems.filter(item => !item.isCertain && (!item.matchedProducts || item.matchedProducts.length === 0));
+          
+          console.log('Items categories:', { certain, uncertain, notFound });
           
           // Add the certain items to the grocery list
           updateGroceryItems(certain);
@@ -306,11 +334,15 @@ const Chat = () => {
             });
           }
           
-          // Add order creation confirmation
-          responseText += `\nהזמנה חדשה נוצרה בהצלחה!
-מספר הזמנה: ${apiResponse.order.order_id}
-סופרמרקט: ${apiResponse.order.supermarket}
-מספר משתתפים מקסימלי: ${apiResponse.order.max_participants}`;
+          // Add order summary and instructions
+          responseText += `\nסיכום הזמנה:
+מספר פריטים: ${groceryItems.length + certain.length}
+סה"כ: ${calculateTotal()}₪
+
+לסיום ההזמנה הקלד "סיים"
+להוספת פריטים נוספים, הקלד אותם כעת`;
+          
+          console.log('Adding response message:', responseText);
           
           // Add the formatted response to chat
           setMessages(msgs => [...msgs, { 
@@ -328,7 +360,7 @@ const Chat = () => {
             }]);
           }
         } else {
-          // No items found
+          console.log('No items found in response');
           setMessages(msgs => [...msgs, { 
             text: "לא הצלחתי לזהות פריטים ברשימה שלך. אנא נסה שוב עם פורמט אחר או הוסף פרטים נוספים.", 
             sender: "ai" 
@@ -337,11 +369,6 @@ const Chat = () => {
         
       } catch (error) {
         console.error("Error processing grocery list:", error);
-        
-        // Remove the "thinking" message
-        setMessages(msgs => msgs.filter(m => m.id !== thinkingMsgId));
-        
-        // Add error message with more specific details
         setMessages(msgs => [...msgs, { 
           text: `שגיאה בעיבוד הרשימה: ${error.message}. אנא נסה שוב או פנה לתמיכה.`, 
           sender: "ai" 
@@ -352,30 +379,92 @@ const Chat = () => {
     }
   };
 
+  // Helper function to generate delivery time options
+  const generateDeliveryOptions = () => {
+    const options = [];
+    const today = new Date();
+    
+    // Generate options for next 7 days (excluding Friday and Saturday)
+    for (let i = 1; i <= 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      
+      // Skip Friday and Saturday
+      if (date.getDay() === 5 || date.getDay() === 6) continue;
+      
+      const dayName = date.toLocaleDateString('he-IL', { weekday: 'long' });
+      const dateStr = date.toLocaleDateString('he-IL');
+      
+      options.push(`\n${dayName}, ${dateStr}:`);
+      options.push('08:00-12:00');
+      options.push('14:00-18:00');
+      options.push('18:00-22:00');
+    }
+    
+    return options.join('\n');
+  };
+
+  // Helper function to calculate total
+  const calculateTotal = () => {
+    const deliveryFee = 30.0;
+    const subtotal = groceryItems
+      .filter(item => item.selected)
+      .reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    return (subtotal + deliveryFee).toFixed(2);
+  };
+
   // Update the grocery items state with the processed items
   const updateGroceryItems = (items) => {
+    console.log('Updating grocery items with:', items);
+    
     const newItems = items.map(item => {
       // Create a new item object for our state
-      const topMatch = item.matchedProducts.length > 0 ? item.matchedProducts[0] : null;
+      const topMatch = item.matchedProducts && item.matchedProducts.length > 0 ? item.matchedProducts[0] : null;
       
-      return {
-        id: Date.now() + Math.random(), // Generate a unique ID
+      // If we have a direct product match from the API
+      if (item.product && item.price) {
+        const newItem = {
+          id: Date.now() + Math.random(), // Generate a unique ID
+          name: item.product,
+          quantity: item.quantity,
+          unit: item.unit || 'יחידה',
+          price: item.price,
+          productId: item.productId || null,
+          isCertain: true,
+          selected: true,
+          alternativeOptions: [],
+          reasonForMatch: item.reasonForMatch || null
+        };
+        console.log('Created direct match item:', newItem);
+        return newItem;
+      }
+      
+      // Handle items that need user selection
+      const newItem = {
+        id: Date.now() + Math.random(),
         name: topMatch ? topMatch.name : item.product,
         quantity: item.quantity,
-        unit: topMatch ? topMatch.unit : item.unit,
+        unit: topMatch ? topMatch.unit : (item.unit || 'יחידה'),
         price: topMatch ? topMatch.price : null,
         productId: topMatch ? topMatch.id : null,
         isCertain: item.isCertain,
         originalItem: item,
-        selected: item.isCertain, // Auto-select certain items
-        alternativeOptions: item.matchedProducts,
-        // Include the reasoning from GPT-4 if available
+        selected: item.isCertain,
+        alternativeOptions: item.matchedProducts || [],
         reasonForMatch: item.reasonForMatch || null
       };
+      console.log('Created item needing selection:', newItem);
+      return newItem;
     });
     
+    console.log('New items to add:', newItems);
+    
     // Add the new items to our grocery list
-    setGroceryItems(prev => [...prev, ...newItems]);
+    setGroceryItems(prev => {
+      const updated = [...prev, ...newItems];
+      console.log('Updated grocery items:', updated);
+      return updated;
+    });
   };
 
   // Handle option selection for a pending item
@@ -742,13 +831,25 @@ const Chat = () => {
         </div>
       </div>
 
-      
-      {hasSubmittedOrder ? (
-        // Two-column layout after order submission
-        <div className="main-content two-column">
-          {/* Left side - Chat interface */}
-          <div className="chat-container">
-            {/* Chat messages */}
+      <div className="main-content centered">
+        <div className="centered-container">
+          {!hasSubmittedOrder ? (
+            <div className="welcome-message">
+              <h3>ברוך הבא {user?.name?.split(' ')[0] || ''} לעוזר הקניות!</h3>
+              <p>הקלד או הדבק את רשימת הקניות שלך באופן הבא:</p>
+              <div className="format-instructions">
+                <ul className="instruction-list">
+                  <li><span className="highlight">כמות מוצר</span> (לדוגמה: "2 חלב", "1 לחם")</li>
+                  <li>פריט אחד בכל שורה</li>
+                  <li>אפשר להוסיף פרטים כמו: אחוז שומן, יצרן, גודל</li>
+                </ul>
+              </div>
+              <p>לדוגמה:</p>
+              <div className="example-list">
+                <div className="example-item">{exampleItems[0]}</div>
+              </div>
+            </div>
+          ) : (
             <div className="chat-messages">
               {messages.map((msg, index) => (
                 <div key={msg.id || index} className="message-container">
@@ -768,91 +869,30 @@ const Chat = () => {
               ))}
               <div ref={messagesEndRef} />
             </div>
-
-            <div className="chat-input-container">
-              <textarea
-                className="chat-input"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
-                disabled={isProcessing}
-                rows={1}
-              />
-              <button 
-                className="send-button" 
-                onClick={handleSend} 
-                disabled={isProcessing}
-              >
-                <FiSend size={20} />
-              </button>
-            </div>
-            
-            <OrderStatusSummary />
+          )}
+          
+          <div className="chat-input-container">
+            <textarea
+              className="chat-input"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
+              disabled={isProcessing}
+              rows={1}
+            />
+            <button 
+              className="send-button" 
+              onClick={handleSend} 
+              disabled={isProcessing}
+            >
+              <FiSend size={20} />
+            </button>
           </div>
           
-          {/* Right side - Cart and summaries */}
-          <div className="sidebar">
-            {/* Order information */}
-            {currentOrder && (
-              <div className="order-info">
-                <h3>פרטי הזמנה #{currentOrder.order_id}</h3>
-                <p>סופרמרקט: {currentOrder.supermarket}</p>
-                <p>מספר משתתפים: {currentOrder.max_participants}</p>
-              </div>
-            )}
-            
-            {/* Grocery cart */}
-            <GroceryCart />
-            
-            {/* Not found items summary */}
-            <NotFoundItemsSummary />
-            
-            {/* Pending options reminder */}
-            <PendingOptionsSummary />
-          </div>
+          {hasSubmittedOrder && <OrderStatusSummary />}
         </div>
-      ) : (
-        // Centered layout before order submission
-        <div className="main-content centered">
-          <div className="centered-container">
-            <div className="welcome-message">
-              <h3>ברוך הבא {user?.name?.split(' ')[0] || ''} לעוזר הקניות!</h3>
-              <p>הקלד או הדבק את רשימת הקניות שלך באופן הבא:</p>
-              <div className="format-instructions">
-                <ul className="instruction-list">
-                  <li><span className="highlight">כמות מוצר</span> (לדוגמה: "2 חלב", "1 לחם")</li>
-                  <li>פריט אחד בכל שורה</li>
-                  <li>אפשר להוסיף פרטים כמו: אחוז שומן, יצרן, גודל</li>
-                </ul>
-              </div>
-              <p>לדוגמה:</p>
-              <div className="example-list">
-                <div className="example-item">{exampleItems[0]}</div>
-              </div>
-            </div>
-            
-            <div className="chat-input-container">
-              <textarea
-                className="chat-input"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
-                disabled={isProcessing}
-                rows={1}
-              />
-              <button 
-                className="send-button" 
-                onClick={handleSend} 
-                disabled={isProcessing}
-              >
-                <FiSend size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* User Info Modal */}
       {showUserInfo && (
