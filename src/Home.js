@@ -106,19 +106,19 @@ const Home = ({ onAuthChange }) => {
         <div className="toggle-container">
           <span
             className={`toggle-option ${
-              formMode === "signup" ? "active" : ""
-            }`}
-            onClick={() => setFormMode("signup")}
-          >
-            הרשמה
-          </span>
-          <span
-            className={`toggle-option ${
               formMode === "login" ? "active" : ""
             }`}
             onClick={() => setFormMode("login")}
           >
             התחברות
+          </span>
+          <span
+            className={`toggle-option ${
+              formMode === "signup" ? "active" : ""
+            }`}
+            onClick={() => setFormMode("signup")}
+          >
+            הרשמה
           </span>
         </div>
 
@@ -127,21 +127,21 @@ const Home = ({ onAuthChange }) => {
           {/* Email & Password (shown in both modes) */}
           <div className="form-row">
             <div className="form-group">
-              <label htmlFor="email">אימייל</label>
-              <input
-                type="email"
-                id="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
-            <div className="form-group">
               <label htmlFor="password">סיסמה</label>
               <input
                 type="password"
                 id="password"
                 value={formData.password}
+                onChange={handleInputChange}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="email">אימייל</label>
+              <input
+                type="email"
+                id="email"
+                value={formData.email}
                 onChange={handleInputChange}
                 required
               />

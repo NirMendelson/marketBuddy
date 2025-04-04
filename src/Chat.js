@@ -777,7 +777,7 @@ const Chat = () => {
                 onKeyDown={handleKeyDown}
                 placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
                 disabled={isProcessing}
-                rows={3}
+                rows={1}
               />
               <button 
                 className="send-button" 
@@ -817,7 +817,7 @@ const Chat = () => {
         <div className="main-content centered">
           <div className="centered-container">
             <div className="welcome-message">
-              <h3>ברוך הבא {user?.name || ''} לעוזר הקניות!</h3>
+              <h3>ברוך הבא {user?.name?.split(' ')[0] || ''} לעוזר הקניות!</h3>
               <p>הקלד או הדבק את רשימת הקניות שלך באופן הבא:</p>
               <div className="format-instructions">
                 <ul className="instruction-list">
@@ -828,19 +828,7 @@ const Chat = () => {
               </div>
               <p>לדוגמה:</p>
               <div className="example-list">
-                {exampleItems.map((item, index) => (
-                  <div key={index} className="example-item">{item}</div>
-                ))}
-              </div>
-              
-              <div style={{ marginTop: '20px', textAlign: 'center' }}>
-                <button 
-                  className="action-btn" 
-                  onClick={toggleOrderSettings}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                >
-                  <FiSettings size={16} /> הגדרות הזמנה
-                </button>
+                <div className="example-item">{exampleItems[0]}</div>
               </div>
             </div>
             
@@ -852,7 +840,7 @@ const Chat = () => {
                 onKeyDown={handleKeyDown}
                 placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
                 disabled={isProcessing}
-                rows={5}
+                rows={1}
               />
               <button 
                 className="send-button" 
