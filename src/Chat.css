@@ -135,20 +135,21 @@
   align-items: center;
   padding: 15px;
   background-color: #fff;
-  border-top: 1px solid #e0e0e0;
+  border: 1px solid #b8b8b8;
+  border-radius: 18px;
+
 }
 
 .chat-input {
   flex: 1;
-  padding: 12px 15px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  border: 1px solid #b8b8b8;
+  border-radius: 18px;
   outline: none;
   resize: none;
   font-family: "Assistant", sans-serif;
   min-height: 40px;
   direction: rtl;
-  transition: border-color 0.2s;
+  min-width: 700px;
 }
 
 .chat-input:focus {
@@ -162,7 +163,7 @@
   padding: 12px;
   border-radius: 50%;
   cursor: pointer;
-  margin-right: 10px;
+  margin-left: 10px;
   transition: background-color 0.2s;
 }
 
@@ -225,10 +226,12 @@
   padding: 25px;
   border-radius: 10px;
   margin-bottom: 20px;
-  max-width: 600px;
+  width: 500px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   direction: rtl;
   text-align: right;
+  border: 1px solid #b8b8b8;
+
 }
 
 .welcome-message h3 {

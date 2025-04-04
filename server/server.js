@@ -6,6 +6,9 @@ const session = require("express-session");
 const app = express();
 const { supabase, pool, initializeDatabase } = require('./config/db');
 const { processGroceryList } = require('./services/GPT4API');
+const { findNearbyUsers } = require('./services/NearbyUsers');
+const { sendEmail } = require('./services/email'); 
+
 
 // Initialize database
 initializeDatabase();
@@ -60,7 +63,6 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
       .select();
 
     if (orderError) throw orderError;
-    
     if (!orderData || orderData.length === 0) {
       throw new Error('Failed to create order');
     }
@@ -79,12 +81,41 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
 
     if (participantError) throw participantError;
 
+    // 🧭 Check for nearby users
+    const nearbyUsers = await findNearbyUsers(userEmail);
+
+    if (nearbyUsers.length > 0) {
+      console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
+
+      for (const user of nearbyUsers) {
+        await sendEmail(
+          user.email,
+          '🚀 הזמנה חדשה קרובה אליך!',
+          `שלום,
+
+משתמש באזור שלך יצר הזמנה חדשה ב-${supermarket}.  
+אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+
+📍 מיקום: ${user.distance} מטר ממך  
+🛒 הזמנה מסופרמרקט: ${supermarket}  
+
+[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
+
+בברכה,  
+צוות MarketBuddy`
+        );
+      }
+    } else {
+      console.log(`📍 No nearby users found for ${userEmail}`);
+    }
+
     return order;
   } catch (error) {
     console.error('Error creating order:', error);
     throw error;
   }
 }
+
 
 /**
  * Add items to an order
@@ -222,6 +253,8 @@ async function updateOrderStatus(orderId, status) {
 // ====== AUTHENTICATION ROUTES ======
 
 // POST /signup route
+const axios = require('axios'); // Add this at the top of your server.js if not already
+
 app.post("/signup", async (req, res) => {
   try {
     // Extract form data from req.body
@@ -236,32 +269,69 @@ app.post("/signup", async (req, res) => {
       supermarket,
     } = req.body;
 
-    // Hash the password (10 is the salt rounds)
+    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert user into database with hashed password
+    // Insert user into users table
     const { data, error } = await supabase
       .from('users')
       .insert([
         {
-          email: email,
+          email,
           password: hashedPassword,
-          name: name,
-          phone: phone,
-          number: number,
-          street: street,
-          city: city,
-          supermarket: supermarket
+          name,
+          phone,
+          number,
+          street,
+          city,
+          supermarket
         }
       ])
       .select('email, name, supermarket');
 
     if (error) {
-      // Check for duplicate email error
       if (error.code === '23505') {
         return res.status(400).json({ error: "כתובת האימייל כבר קיימת במערכת" });
       }
       throw error;
+    }
+
+    // Construct address string for geocoding
+    const address = `${street} ${number}, ${city}, Israel`;
+
+    // Geocode using OpenCage
+    const geoRes = await axios.get('https://api.opencagedata.com/geocode/v1/json', {
+      params: {
+        q: address,
+        key: process.env.OPENCAGE
+      }
+    });
+
+    const geoData = geoRes.data;
+    if (
+      geoData.results.length === 0 ||
+      !geoData.results[0].geometry
+    ) {
+      throw new Error('לא ניתן לאתר מיקום לפי הכתובת שסופקה');
+    }
+
+    const { lat, lng } = geoData.results[0].geometry;
+
+    // Insert coordinates into user_coordinates
+    const { error: coordError } = await supabase
+      .from('user_coordinates')
+      .insert([
+        {
+          email,
+          latitude: lat,
+          longitude: lng, // intentional typo if your DB column is named this way
+          updated_at: new Date().toISOString()
+        }
+      ]);
+
+    if (coordError) {
+      console.error('Failed to insert user coordinates:', coordError);
+      // not throwing here so user still signs up successfully
     }
 
     // Store user info in session
@@ -271,15 +341,16 @@ app.post("/signup", async (req, res) => {
       supermarket: data[0].supermarket
     };
 
-    res.json({ 
-      success: "נרשמת בהצלחה! תודה שנרשמת.", 
-      user: req.session.user 
+    res.json({
+      success: "נרשמת בהצלחה! תודה שנרשמת.",
+      user: req.session.user
     });
   } catch (error) {
-    console.error('Error during signup:', error);
+    console.error('Error during signup:', error.message || error);
     res.status(500).json({ error: "אירעה שגיאה, נא לנסות שוב." });
   }
 });
+
 
 // Login route with secure password check
 app.post("/login", async (req, res) => {
