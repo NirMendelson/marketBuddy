@@ -4,6 +4,7 @@ import Home from "./Home";
 import Header from "./Header";
 import Chat from "./Chat"; // Fixed casing to match the actual file name
 import Payment from './Payment';
+import PaymentSuccess from './PaymentSuccess';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -76,6 +77,14 @@ const App = () => {
           element={
             <ProtectedRoute>
               <Payment />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/payment-success" 
+          element={
+            <ProtectedRoute>
+              <PaymentSuccess />
             </ProtectedRoute>
           } 
         />

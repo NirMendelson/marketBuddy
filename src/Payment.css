@@ -15,17 +15,31 @@
   transition: all 0.3s ease-in-out;
 }
 
-body {
-  background: linear-gradient(to bottom right, #f2f7f5, #dfeeea);
-  margin: 0;
-  font-family: "Assistant", sans-serif;
-}
 
 .payment-title {
   font-size: 1.8rem;
   color: #416655;
   margin-bottom: 2rem;
   text-align: center;
+}
+
+.payment-error {
+  text-align: center;
+  padding: 2rem;
+  background-color: #fff8f8;
+  border-radius: 8px;
+  border: 1px solid #ffcdd2;
+  margin-top: 1rem;
+}
+
+.payment-error p {
+  margin: 0.5rem 0;
+  color: #d32f2f;
+}
+
+.payment-error p:first-child {
+  font-weight: bold;
+  margin-bottom: 1rem;
 }
 
 @media (max-width: 600px) {

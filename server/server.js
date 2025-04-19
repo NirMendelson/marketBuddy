@@ -24,11 +24,13 @@ app.use(express.json());
 // Session middleware
 app.use(session({
   secret: process.env.SESSION_SECRET || 'market-buddy-secret-key',
-  resave: false,
-  saveUninitialized: false,
+  resave: true,
+  saveUninitialized: true,
   cookie: {
     secure: process.env.NODE_ENV === 'production', // Only use secure cookies in production
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax', // Allow cookies to be sent with cross-site requests
+    httpOnly: true // Prevent client-side JavaScript from accessing the cookie
   }
 }));
 
@@ -418,8 +420,11 @@ app.post('/orders/process-list', isAuthenticated, async (req, res) => {
         items: processedList.items.map(item => ({
           confidence: item.confidence,
           product: item.product,
+          matchedProductName: item.matchedProducts && item.matchedProducts.length > 0 ? item.matchedProducts[0].name : null,
+          matchedProducts: item.matchedProducts || [],
           quantity: item.quantity,
-          unit: item.unit
+          unit: item.unit,
+          price: item.matchedProducts && item.matchedProducts.length > 0 ? item.matchedProducts[0].price : 0
         }))
       }
     });

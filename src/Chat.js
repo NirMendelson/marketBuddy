@@ -200,6 +200,93 @@ const Chat = () => {
     }
   }, [messages]);
 
+  // Helper function to generate delivery time options
+  const generateDeliveryOptions = () => {
+    const options = [];
+    const today = new Date();
+    
+    // Generate options for next 7 days (excluding Friday and Saturday)
+    for (let i = 1; i <= 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      
+      // Skip Friday and Saturday
+      if (date.getDay() === 5 || date.getDay() === 6) continue;
+      
+      const dayName = date.toLocaleDateString('he-IL', { weekday: 'long' });
+      const dateStr = date.toLocaleDateString('he-IL');
+      
+      options.push({
+        date: dateStr,
+        dayName: dayName,
+        timeSlots: [
+          { start: '08:00', end: '12:00' },
+          { start: '14:00', end: '18:00' },
+          { start: '18:00', end: '22:00' }
+        ]
+      });
+    }
+    
+    return options;
+  };
+
+  // Delivery Options Component
+  const DeliveryOptions = ({ options, onSelect }) => {
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [selectedTime, setSelectedTime] = useState(null);
+
+    const handleDateSelect = (date) => {
+      setSelectedDate(date);
+      setSelectedTime(null);
+    };
+
+    const handleTimeSelect = (time) => {
+      setSelectedTime(time);
+    };
+
+    const handleConfirm = () => {
+      if (selectedDate && selectedTime) {
+        onSelect(`${selectedDate} ${selectedTime.start}-${selectedTime.end}`);
+      }
+    };
+
+    return (
+      <div className="delivery-options">
+        <div className="delivery-dates">
+          {options.map((option, index) => (
+            <button
+              key={index}
+              className={`date-button ${selectedDate === option.date ? 'selected' : ''}`}
+              onClick={() => handleDateSelect(option.date)}
+            >
+              {option.dayName}, {option.date}
+            </button>
+          ))}
+        </div>
+        
+        {selectedDate && (
+          <div className="delivery-times">
+            {options.find(opt => opt.date === selectedDate).timeSlots.map((time, index) => (
+              <button
+                key={index}
+                className={`time-button ${selectedTime === time ? 'selected' : ''}`}
+                onClick={() => handleTimeSelect(time)}
+              >
+                {time.start}-{time.end}
+              </button>
+            ))}
+          </div>
+        )}
+        
+        {selectedTime && (
+          <button className="confirm-delivery" onClick={handleConfirm}>
+            <FiCheck size={20} /> אישור
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const handleSend = async () => {
     if (message.trim() !== "") {
       console.log('Starting handleSend with message:', message);
@@ -215,7 +302,7 @@ const Chat = () => {
       setMessage(""); // Clear input field immediately for better UX
       
       // Check if user wants to finish the order
-      if (userMessage.toLowerCase() === 'סיים') {
+      if (userMessage.toLowerCase() === 'סיים' || userMessage.toLowerCase() === 'סיום') {
         console.log('User requested to finish order');
         if (groceryItems.length === 0) {
           setMessages(msgs => [...msgs, { 
@@ -228,17 +315,28 @@ const Chat = () => {
         // Show delivery time options
         const deliveryOptions = generateDeliveryOptions();
         setMessages(msgs => [...msgs, { 
-          text: "בחר זמן משלוח:\n" + deliveryOptions, 
+          text: "בחר זמן משלוח:",
           sender: "ai",
-          isDeliveryOptions: true
+          isDeliveryOptions: true,
+          deliveryOptions: deliveryOptions
         }]);
         return;
       }
       
-      setIsProcessing(true);
+      // Check if user is selecting a delivery time
+      if (userMessage.match(/^\d{2}:\d{2}-\d{2}:\d{2}$/)) {
+        console.log('User selected delivery time:', userMessage);
+        // TODO: Handle delivery time selection and proceed to payment
+        setMessages(msgs => [...msgs, { 
+          text: "מעביר אותך לדף התשלום...", 
+          sender: "ai" 
+        }]);
+        // Navigate to payment page
+        navigate('/payment');
+        return;
+      }
       
-      // Unique ID for the "thinking" message
-      const thinkingMsgId = Date.now().toString();
+      setIsProcessing(true);
       
       try {
         console.log('Calling processGroceryList API with message:', userMessage);
@@ -252,8 +350,10 @@ const Chat = () => {
         
         console.log('API Response:', apiResponse);
         
-        // Set the current order
-        setCurrentOrder(apiResponse.order);
+        // Set the current order if it doesn't exist
+        if (!currentOrder) {
+          setCurrentOrder(apiResponse.order);
+        }
         
         // Get the processed items from the API response
         const aiResponse = apiResponse.groceryList;
@@ -264,16 +364,17 @@ const Chat = () => {
           
           // Convert the response format to match what the frontend expects
           const processedItems = aiResponse.items.map(item => ({
-            isCertain: item.confidence >= 0.8,
-            matchedProducts: [{
-              name: item.product,
+            isCertain: (item.confidence >= 0.9) || (item.confidence >= 0.8 && item.matchedProducts && item.matchedProducts.length === 1),
+            matchedProducts: item.matchedProducts || [{
+              name: item.matchedProductName || item.product,
               unit: item.unit,
-              price: 0, // Will be updated when we get the actual product data
+              price: item.price || 0,
               id: null
             }],
             product: item.product,
             quantity: item.quantity,
-            unit: item.unit
+            unit: item.unit,
+            confidence: item.confidence
           }));
           
           console.log('Processed items:', processedItems);
@@ -281,7 +382,7 @@ const Chat = () => {
           // Separate items into categories
           const certain = processedItems.filter(item => item.isCertain);
           const uncertain = processedItems.filter(item => !item.isCertain && item.matchedProducts && item.matchedProducts.length > 0);
-          const notFound = processedItems.filter(item => !item.isCertain && (!item.matchedProducts || item.matchedProducts.length === 0));
+          const notFound = processedItems.filter(item => !item.matchedProducts || item.matchedProducts.length === 0);
           
           console.log('Items categories:', { certain, uncertain, notFound });
           
@@ -295,9 +396,9 @@ const Chat = () => {
           const formattedOptions = uncertain.map(item => ({
             id: Date.now() + Math.random(),
             originalItem: item,
-            product: item.product,
+            product: item.matchedProducts[0].name, // Use the matched product name
             quantity: item.quantity,
-            unit: item.unit,
+            unit: item.matchedProducts[0].unit,
             options: item.matchedProducts
           }));
           
@@ -306,51 +407,43 @@ const Chat = () => {
           // Format response messages based on processing results
           let responseText = "";
           
-          // First report on successfully added items
-          if (certain.length > 0) {
-            responseText += `✅ נוספו ${certain.length} פריטים להזמנה בהצלחה:\n`;
+          // Only show order summary if there are no items that need selection
+          if (uncertain.length === 0) {
+            // Add order summary and instructions
+            const deliveryFee = 30.0;
+            const subtotal = groceryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) + 
+                            certain.reduce((sum, item) => sum + (item.matchedProducts[0].price * item.quantity), 0);
+            const total = subtotal + deliveryFee;
+            
+            responseText += `סיכום הזמנה:\n`;
+            
+            // Add existing items
+            groceryItems.forEach(item => {
+              responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
+            });
+            
+            // Add new items
             certain.forEach(item => {
               const topMatch = item.matchedProducts[0];
-              responseText += `• ${item.quantity} ${topMatch.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
+              responseText += `- ${item.quantity} ${topMatch.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
             });
+            
+            responseText += `- משלוח - ${deliveryFee}₪\n\n`;
+            responseText += `סה"כ ${total.toFixed(1)}₪\n\n`;
+            responseText += `לסיום ההזמנה הקלד "סיים"\nלהוספת פריטים נוספים, הקלד אותם כעת`;
           }
-          
-          // Report on items that couldn't be matched at all
-          if (notFound.length > 0) {
-            if (responseText) responseText += "\n";
-            responseText += `❌ לא נמצאו ${notFound.length} פריטים:\n`;
-            notFound.forEach(item => {
-              responseText += `• ${item.product} (${item.quantity} ${item.unit || ''})\n`;
-            });
-            responseText += "אתה יכול לנסח מחדש פריטים אלה או לבחור מוצרים דומים מהקטלוג.\n";
-          }
-          
-          // Report on items that need user selection
-          if (uncertain.length > 0) {
-            if (responseText) responseText += "\n";
-            responseText += `⚠️ יש ${uncertain.length} פריטים שדורשים בחירה שלך:\n`;
-            uncertain.forEach(item => {
-              responseText += `• ${item.product} (${item.quantity} ${item.unit || ''})\n`;
-            });
-          }
-          
-          // Add order summary and instructions
-          responseText += `\nסיכום הזמנה:
-מספר פריטים: ${groceryItems.length + certain.length}
-סה"כ: ${calculateTotal()}₪
-
-לסיום ההזמנה הקלד "סיים"
-להוספת פריטים נוספים, הקלד אותם כעת`;
           
           console.log('Adding response message:', responseText);
           
-          // Add the formatted response to chat
-          setMessages(msgs => [...msgs, { 
-            text: responseText, 
-            sender: "ai" 
-          }]);
+          // Add the formatted response to chat if there's content
+          if (responseText) {
+            setMessages(msgs => [...msgs, { 
+              text: responseText, 
+              sender: "ai" 
+            }]);
+          }
           
-          // Show options selection UI if we have uncertain items
+          // Show options selection UI only if we have uncertain items with multiple options
           if (uncertain.length > 0) {
             setMessages(msgs => [...msgs, { 
               text: "אנא בחר את האפשרות המתאימה עבור כל פריט:",
@@ -379,31 +472,6 @@ const Chat = () => {
     }
   };
 
-  // Helper function to generate delivery time options
-  const generateDeliveryOptions = () => {
-    const options = [];
-    const today = new Date();
-    
-    // Generate options for next 7 days (excluding Friday and Saturday)
-    for (let i = 1; i <= 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      
-      // Skip Friday and Saturday
-      if (date.getDay() === 5 || date.getDay() === 6) continue;
-      
-      const dayName = date.toLocaleDateString('he-IL', { weekday: 'long' });
-      const dateStr = date.toLocaleDateString('he-IL');
-      
-      options.push(`\n${dayName}, ${dateStr}:`);
-      options.push('08:00-12:00');
-      options.push('14:00-18:00');
-      options.push('18:00-22:00');
-    }
-    
-    return options.join('\n');
-  };
-
   // Helper function to calculate total
   const calculateTotal = () => {
     const deliveryFee = 30.0;
@@ -421,39 +489,21 @@ const Chat = () => {
       // Create a new item object for our state
       const topMatch = item.matchedProducts && item.matchedProducts.length > 0 ? item.matchedProducts[0] : null;
       
-      // If we have a direct product match from the API
-      if (item.product && item.price) {
-        const newItem = {
-          id: Date.now() + Math.random(), // Generate a unique ID
-          name: item.product,
-          quantity: item.quantity,
-          unit: item.unit || 'יחידה',
-          price: item.price,
-          productId: item.productId || null,
-          isCertain: true,
-          selected: true,
-          alternativeOptions: [],
-          reasonForMatch: item.reasonForMatch || null
-        };
-        console.log('Created direct match item:', newItem);
-        return newItem;
-      }
-      
-      // Handle items that need user selection
+      // Always use the matched product name and details
       const newItem = {
-        id: Date.now() + Math.random(),
-        name: topMatch ? topMatch.name : item.product,
+        id: Date.now() + Math.random(), // Generate a unique ID
+        name: topMatch ? topMatch.name : item.product, // Use the matched product name if available
         quantity: item.quantity,
-        unit: topMatch ? topMatch.unit : (item.unit || 'יחידה'),
-        price: topMatch ? topMatch.price : null,
+        unit: topMatch ? topMatch.unit : item.unit,
+        price: topMatch ? topMatch.price : 0,
         productId: topMatch ? topMatch.id : null,
-        isCertain: item.isCertain,
-        originalItem: item,
-        selected: item.isCertain,
+        isCertain: true,
+        selected: true,
         alternativeOptions: item.matchedProducts || [],
         reasonForMatch: item.reasonForMatch || null
       };
-      console.log('Created item needing selection:', newItem);
+      
+      console.log('Created item:', newItem);
       return newItem;
     });
     
@@ -490,15 +540,35 @@ const Chat = () => {
     
     setGroceryItems(prev => [...prev, newItem]);
     
-    
     // Remove the item from pending options
     setPendingOptions(prev => prev.filter(item => item.id !== itemId));
     
-    // Add a confirmation message
+    // Calculate totals
+    const deliveryFee = 30.0;
+    const subtotal = groceryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) + 
+                    (selectedOption.price * pendingItem.quantity);
+    const total = subtotal + deliveryFee;
+    
+    // Create a single order summary message
+    let responseText = `סיכום הזמנה:\n`;
+    
+    // Add existing items
+    groceryItems.forEach(item => {
+      responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
+    });
+    
+    // Add the newly selected item
+    responseText += `- ${pendingItem.quantity} ${selectedOption.unit} ${selectedOption.name} - ${selectedOption.price}₪\n`;
+    
+    // Add delivery and total
+    responseText += `- משלוח - ${deliveryFee}₪\n\n`;
+    responseText += `סה"כ ${total.toFixed(1)}₪\n\n`;
+    responseText += `לסיום ההזמנה הקלד "סיים"\nלהוספת פריטים נוספים, הקלד אותם כעת`;
+    
+    // Add the formatted response to chat
     setMessages(msgs => [...msgs, { 
-      text: `✅ נוסף לעגלה: ${pendingItem.quantity} ${selectedOption.unit} ${selectedOption.name} - ${selectedOption.price}₪`, 
-      sender: "ai",
-      isConfirmation: true
+      text: responseText, 
+      sender: "ai" 
     }]);
   };
 
@@ -864,6 +934,20 @@ const Chat = () => {
                         <OptionButtons key={item.id} item={item} />
                       ))}
                     </div>
+                  )}
+                  
+                  {/* Render delivery options if this is a delivery options message */}
+                  {msg.isDeliveryOptions && msg.deliveryOptions && (
+                    <DeliveryOptions 
+                      options={msg.deliveryOptions}
+                      onSelect={(time) => {
+                        setMessages(msgs => [...msgs, { 
+                          text: "מעביר אותך לדף התשלום...", 
+                          sender: "ai" 
+                        }]);
+                        navigate('/payment');
+                      }}
+                    />
                   )}
                 </div>
               ))}
