@@ -5,6 +5,7 @@ import Header from "./Header";
 import Chat from "./Chat"; // Fixed casing to match the actual file name
 import Payment from './Payment';
 import PaymentSuccess from './PaymentSuccess';
+import Participate from './Participate';
 
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -85,6 +86,14 @@ const App = () => {
           element={
             <ProtectedRoute>
               <PaymentSuccess />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/orders/:orderId" 
+          element={
+            <ProtectedRoute>
+              <Participate />
             </ProtectedRoute>
           } 
         />
