@@ -3,11 +3,12 @@ const express = require("express");
 const bcrypt = require("bcrypt"); 
 const cors = require("cors");
 const session = require("express-session");
+const path = require('path');
 const app = express();
 const { supabase, pool, initializeDatabase } = require('./config/db');
 const { processGroceryList } = require('./services/GPT4API');
 const { findNearbyUsers } = require('./services/NearbyUsers');
-const { sendEmail } = require('./services/email'); 
+const { sendEmail, createNearbyOrderEmail } = require('./services/email'); 
 
 
 // Initialize database
@@ -41,6 +42,9 @@ const isAuthenticated = (req, res, next) => {
   }
   next();
 };
+
+// Add this before your API routes
+app.use(express.static(path.join(__dirname, '../build')));
 
 // ====== ORDER FUNCTIONS ======
 
@@ -549,23 +553,38 @@ app.post('/orders/:orderId/notify-nearby', isAuthenticated, async (req, res) => 
     if (nearbyUsers.length > 0) {
       console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
 
+      // Get user address from users table
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('street, number')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) throw userError;
+
       for (const user of nearbyUsers) {
-        await sendEmail(
-          user.email,
-          '🚀 הזמנה חדשה קרובה אליך!',
-          `שלום,
+        // Get recipient's first name
+        const { data: recipientData } = await supabase
+          .from('users')
+          .select('name')
+          .eq('email', user.email)
+          .single();
 
-משתמש באזור שלך יצר הזמנה חדשה ב-${order.supermarket}.  
-אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+        const firstName = recipientData?.name?.split(' ')[0] || '';
+        const address = `${userData.street} ${userData.number}`;
+        const deliveryTime = order.delivery_time || '';
+        const deliveryDate = order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('he-IL') : '';
 
-📍 מיקום: ${user.distance} מטר ממך  
-🛒 הזמנה מסופרמרקט: ${order.supermarket}  
+        const emailContent = createNearbyOrderEmail({
+          firstName,
+          address,
+          deliveryDate,
+          deliveryTime,
+          supermarket: order.supermarket,
+          orderId: order.order_id
+        });
 
-[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
-
-בברכה,  
-צוות MarketBuddy`
-        );
+        await sendEmail(user.email, 'הזמנה חדשה קרובה אליך!🚀', emailContent);
       }
     } else {
       console.log(`📍 No nearby users found for ${userEmail}`);
@@ -610,23 +629,38 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
     if (nearbyUsers.length > 0) {
       console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
       
+      // Get user address from users table
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('street, number')
+        .eq('email', userEmail)
+        .single();
+
+      if (userError) throw userError;
+
       for (const user of nearbyUsers) {
-        await sendEmail(
-          user.email,
-          '🚀 הזמנה חדשה קרובה אליך!',
-          `שלום,
+        // Get recipient's first name
+        const { data: recipientData } = await supabase
+          .from('users')
+          .select('name')
+          .eq('email', user.email)
+          .single();
 
-משתמש באזור שלך יצר הזמנה חדשה ב-${order.supermarket}.  
-אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+        const firstName = recipientData?.name?.split(' ')[0] || '';
+        const address = `${userData.street} ${userData.number}`;
+        const deliveryTime = order.delivery_time || '';
+        const deliveryDate = order.delivery_date ? new Date(order.delivery_date).toLocaleDateString('he-IL') : '';
 
-📍 מיקום: ${user.distance} מטר ממך  
-🛒 הזמנה מסופרמרקט: ${order.supermarket}  
+        const emailContent = createNearbyOrderEmail({
+          firstName,
+          address,
+          deliveryDate,
+          deliveryTime,
+          supermarket: order.supermarket,
+          orderId: order.order_id
+        });
 
-[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
-
-בברכה,  
-צוות MarketBuddy`
-        );
+        await sendEmail(user.email, 'הזמנה חדשה קרובה אליך!🚀', emailContent);
       }
     } else {
       console.log(`📍 No nearby users found for ${userEmail}`);
@@ -643,6 +677,12 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
     console.error('Error creating order after payment:', error);
     res.status(500).json({ error: 'Failed to create order after payment' });
   }
+});
+
+// Add this at the end, before app.listen
+// Handle client-side routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../build', 'index.html'));
 });
 
 // Run server on port 5000 (or from environment variable)

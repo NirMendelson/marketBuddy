@@ -85,16 +85,21 @@ const Payment = () => {
       localStorage.removeItem("cartItems");
       localStorage.removeItem("orderDetails");
       setShowSuccess(true);
+      return orderData;
     } catch (error) {
       console.error('Error creating order:', error);
       setError(error.message);
+      return null;
     }
   };
 
   const onApprove = async (data, actions) => {
     try {
       // Create the order in our database after PayPal payment is successful
-      const orderId = await createOrderAfterPayment();
+      const response = await createOrderAfterPayment();
+      
+      // Get the order ID from the response
+      const orderId = response.order.order_id;
       
       // Clear the cart and order details from localStorage
       localStorage.removeItem("cartItems");
@@ -142,7 +147,7 @@ const Payment = () => {
       <PayPalScriptProvider 
         options={{ 
           "client-id": paypalClientId,
-          currency: "USD"
+          currency: "ILS"
         }}
       >
         <PayPalButtons
@@ -152,8 +157,8 @@ const Payment = () => {
               purchase_units: [
                 {
                   amount: {
-                    value: (total / 3.5).toFixed(2), // Convert ILS to USD (approximate rate)
-                    currency_code: "USD"
+                    value: total.toFixed(2),
+                    currency_code: "ILS"
                   }
                 }
               ]
