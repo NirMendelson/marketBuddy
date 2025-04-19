@@ -47,8 +47,17 @@ const isAuthenticated = (req, res, next) => {
 /**
  * Create a new order for a user
  */
-async function createOrder(userEmail, supermarket, maxParticipants = 1, deliveryFee = 0, deliveryDate = null) {
+async function createOrder(userEmail, supermarket, maxParticipants = 1, deliveryFee = 0, deliveryDate = null, deliveryTime = null) {
   try {
+    console.log('Creating new order with details:', {
+      userEmail,
+      supermarket,
+      maxParticipants,
+      deliveryFee,
+      deliveryDate,
+      deliveryTime
+    });
+
     // Insert order into orders table
     const { data: orderData, error: orderError } = await supabase
       .from('orders')
@@ -59,6 +68,7 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
           max_participants: maxParticipants,
           delivery_fee: deliveryFee,
           delivery_date: deliveryDate,
+          delivery_time: deliveryTime,
           status: 'open'
         }
       ])
@@ -70,6 +80,7 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
     }
 
     const order = orderData[0];
+    console.log('Order created successfully:', order);
 
     // Add the creator as a participant
     const { error: participantError } = await supabase
@@ -82,6 +93,7 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
       ]);
 
     if (participantError) throw participantError;
+    console.log('Order creator added as participant');
 
     return order;
   } catch (error) {
@@ -392,30 +404,16 @@ app.get('/check-auth', (req, res) => {
 // Process grocery list and create a new order
 app.post('/orders/process-list', isAuthenticated, async (req, res) => {
   try {
-    const { message, maxParticipants, deliveryDate } = req.body;
+    const { message } = req.body;
     const userEmail = req.session.user.email;
-    const userPreferredSupermarket = req.session.user.supermarket || 'רמי לוי'; // Default if not set
     
     console.log("Processing grocery list:", message);
     
     // Process the grocery list using GPT4API
     const processedList = await processGroceryList(message);
     
-    // Create a new order
-    const order = await createOrder(
-      userEmail,
-      userPreferredSupermarket,
-      maxParticipants || 1,
-      30.0, // Default delivery fee
-      deliveryDate ? new Date(deliveryDate) : null
-    );
-    
-    // Return the processed list and order details
+    // Return the processed list
     res.json({
-      order: {
-        ...order,
-        items: [] // Items will be added later when user selects them
-      },
       groceryList: {
         items: processedList.items.map(item => ({
           confidence: item.confidence,
@@ -577,6 +575,73 @@ app.post('/orders/:orderId/notify-nearby', isAuthenticated, async (req, res) => 
   } catch (error) {
     console.error('Error notifying nearby users:', error);
     res.status(500).json({ error: 'Failed to notify nearby users' });
+  }
+});
+
+// Create order after payment is successful
+app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
+  try {
+    const { supermarket, maxParticipants, deliveryDate, deliveryTime, items } = req.body;
+    const userEmail = req.session.user.email;
+
+    console.log('Creating order after payment with details:', {
+      supermarket,
+      maxParticipants,
+      deliveryDate,
+      deliveryTime,
+      itemsCount: items.length
+    });
+
+    // Create the order
+    const order = await createOrder(
+      userEmail,
+      supermarket,
+      maxParticipants,
+      30.0, // Default delivery fee
+      deliveryDate,
+      deliveryTime
+    );
+
+    // Add items to the order
+    const addedItems = await addOrderItems(order.order_id, items, userEmail);
+
+    // Find and notify nearby users
+    const nearbyUsers = await findNearbyUsers(userEmail);
+    if (nearbyUsers.length > 0) {
+      console.log(`📍 Found ${nearbyUsers.length} users within 300 meters of ${userEmail}. Sending emails...`);
+      
+      for (const user of nearbyUsers) {
+        await sendEmail(
+          user.email,
+          '🚀 הזמנה חדשה קרובה אליך!',
+          `שלום,
+
+משתמש באזור שלך יצר הזמנה חדשה ב-${order.supermarket}.  
+אם אתה רוצה להצטרף להזמנה ולחסוך בעלויות משלוח, היכנס לאתר עכשיו!
+
+📍 מיקום: ${user.distance} מטר ממך  
+🛒 הזמנה מסופרמרקט: ${order.supermarket}  
+
+[📩 הצטרף עכשיו](https://marketbuddy.dev/orders/${order.order_id})
+
+בברכה,  
+צוות MarketBuddy`
+        );
+      }
+    } else {
+      console.log(`📍 No nearby users found for ${userEmail}`);
+    }
+
+    res.json({ 
+      success: true,
+      order: {
+        ...order,
+        items: addedItems
+      }
+    });
+  } catch (error) {
+    console.error('Error creating order after payment:', error);
+    res.status(500).json({ error: 'Failed to create order after payment' });
   }
 });
 

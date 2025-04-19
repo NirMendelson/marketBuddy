@@ -7,40 +7,111 @@ import './Payment.css';
 const Payment = () => {
   const navigate = useNavigate();
   const [orderId, setOrderId] = useState(null);
+  const [error, setError] = useState(null);
   const total = parseFloat(localStorage.getItem("orderTotal") || "0");
+  const [cartItems, setCartItems] = useState([]);
+  const [orderDetails, setOrderDetails] = useState(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    // Get order ID from localStorage
-    const id = localStorage.getItem("currentOrderId");
-    if (!id) {
-      console.error('No order ID found');
-      navigate('/chat');
-      return;
+    // Get cart items and order details from localStorage
+    const items = JSON.parse(localStorage.getItem("cartItems") || "[]");
+    const details = JSON.parse(localStorage.getItem("orderDetails") || "{}");
+    
+    // Ensure supermarket has a default value
+    if (!details.supermarket) {
+      details.supermarket = 'רמי לוי'; // Default supermarket
     }
-    setOrderId(id);
-  }, [navigate]);
+    
+    setCartItems(items);
+    setOrderDetails(details);
+  }, []);
 
-  const notifyNearbyUsers = async () => {
+  const createOrderAfterPayment = async () => {
     try {
-      if (!orderId) {
-        throw new Error('Order ID not found');
+      const cartItems = JSON.parse(localStorage.getItem("cartItems") || "[]");
+      const orderDetails = JSON.parse(localStorage.getItem("orderDetails") || "{}");
+      
+      console.log('Cart items from localStorage:', cartItems);
+      console.log('Order details from localStorage:', orderDetails);
+      
+      // Get user data from session
+      const userResponse = await fetch('/check-auth', {
+        credentials: 'include'
+      });
+      
+      if (!userResponse.ok) {
+        throw new Error('Failed to get user data');
+      }
+      
+      const userData = await userResponse.json();
+      console.log('User data from check-auth:', userData);
+      
+      const supermarket = userData.user?.supermarket || 'רמי לוי';
+
+      // Get delivery date and time from orderDetails
+      const deliveryDate = orderDetails.deliveryDate;
+      const deliveryTime = orderDetails.deliveryTime;
+
+      console.log('Delivery date from orderDetails:', deliveryDate);
+      console.log('Delivery time from orderDetails:', deliveryTime);
+
+      if (!deliveryDate || !deliveryTime) {
+        throw new Error("Missing delivery date or time information");
       }
 
-      const response = await fetch(`/orders/${orderId}/notify-nearby`, {
+      const response = await fetch('/orders/create-after-payment', {
         method: 'POST',
-        credentials: 'include'
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          supermarket: supermarket,
+          maxParticipants: orderDetails.maxParticipants || 1,
+          deliveryDate: deliveryDate,
+          deliveryTime: deliveryTime,
+          items: cartItems
+        })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to notify nearby users');
+        throw new Error(errorData.message || 'Failed to create order');
       }
 
-      console.log('Nearby users notified successfully');
+      const orderData = await response.json();
+      setOrderDetails(orderData);
+      localStorage.removeItem("cartItems");
+      localStorage.removeItem("orderDetails");
+      setShowSuccess(true);
     } catch (error) {
-      console.error('Error notifying nearby users:', error);
-      // Don't throw the error to prevent blocking the payment success flow
+      console.error('Error creating order:', error);
+      setError(error.message);
     }
+  };
+
+  const onApprove = async (data, actions) => {
+    try {
+      // Create the order in our database after PayPal payment is successful
+      const orderId = await createOrderAfterPayment();
+      
+      // Clear the cart and order details from localStorage
+      localStorage.removeItem("cartItems");
+      localStorage.removeItem("orderDetails");
+      localStorage.removeItem("orderTotal");
+      
+      // Redirect to success page with the order ID
+      navigate(`/payment-success?orderId=${orderId}`);
+    } catch (error) {
+      console.error('Error after payment approval:', error);
+      setError(error.message || 'An error occurred during payment processing');
+    }
+  };
+
+  const onError = (err) => {
+    console.error('PayPal error:', err);
+    setError('An error occurred with PayPal. Please try again or contact support.');
   };
 
   // Check if PayPal client ID is configured
@@ -57,51 +128,39 @@ const Payment = () => {
     );
   }
 
-  if (!orderId) {
-    return (
-      <div className="payment-container">
-        <h2 className="payment-title">שגיאה</h2>
-        <div className="payment-error">
-          <p>לא נמצא מספר הזמנה. אנא נסה שוב.</p>
-          <button onClick={() => navigate('/chat')}>חזרה לצ'אט</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="payment-container">
       <h2 className="payment-title">השלם תשלום עם PayPal</h2>
-      <PayPalScriptProvider options={{
-        "client-id": paypalClientId,
-        currency: "ILS"
-      }}>
+      <div className="payment-amount">
+        <p>סכום לתשלום: {total.toFixed(2)}₪</p>
+      </div>
+      {error && (
+        <div className="payment-error">
+          <p>{error}</p>
+        </div>
+      )}
+      <PayPalScriptProvider 
+        options={{ 
+          "client-id": paypalClientId,
+          currency: "USD"
+        }}
+      >
         <PayPalButtons
-          style={{ layout: 'vertical', color: 'gold', shape: 'pill', label: 'pay' }}
+          style={{ layout: "vertical" }}
           createOrder={(data, actions) => {
             return actions.order.create({
-              purchase_units: [{
-                amount: { 
-                  value: total.toFixed(2),
-                  currency_code: "ILS"
-                }    
-              }]
+              purchase_units: [
+                {
+                  amount: {
+                    value: (total / 3.5).toFixed(2), // Convert ILS to USD (approximate rate)
+                    currency_code: "USD"
+                  }
+                }
+              ]
             });
           }}
-          onApprove={async (data, actions) => {
-            try {
-              const details = await actions.order.capture();
-              
-              // Notify nearby users after successful payment
-              await notifyNearbyUsers();
-              
-              // Redirect to success page with order ID using hash router format
-              window.location.href = `/#/payment-success?orderId=${orderId}`;
-            } catch (error) {
-              console.error('Error in payment approval:', error);
-              alert('אירעה שגיאה בעיבוד התשלום. אנא נסה שוב.');
-            }
-          }}
+          onApprove={onApprove}
+          onError={onError}
         />
       </PayPalScriptProvider>
     </div>

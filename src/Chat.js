@@ -72,7 +72,7 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   
   // Creates a new order with all the items currently in the shopping cart
-  const createOrderFromCart = async (orderMaxParticipants, orderDeliveryDate) => {
+  const createOrderFromCart = async (orderMaxParticipants, orderDeliveryDate, orderDeliveryTime) => {
     try {
       // Only proceed if there are items in the cart
       const selectedItems = groceryItems.filter(item => item.selected);
@@ -86,37 +86,8 @@ const Chat = () => {
   
       setIsProcessing(true);
   
-      let orderToUse = currentOrder;
-  
-      // If no order exists yet, create one
-      if (!orderToUse) {
-        const orderResponse = await fetch('/orders', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            supermarket: user?.supermarket || 'רמי לוי',
-            maxParticipants: orderMaxParticipants,
-            deliveryDate: orderDeliveryDate,
-            notifyNearbyUsers: false // Don't notify nearby users yet
-          })
-        });
-  
-        if (!orderResponse.ok) {
-          const errorData = await orderResponse.json();
-          throw new Error(errorData.error || 'שגיאה ביצירת ההזמנה');
-        }
-  
-        const orderResult = await orderResponse.json();
-        orderToUse = orderResult.order;
-        setCurrentOrder(orderToUse);
-        setHasSubmittedOrder(true);
-      }
-  
-      // Format the cart items for the API
-      const itemsToAdd = selectedItems.map(item => ({
+      // Format the cart items for storage
+      const itemsToStore = selectedItems.map(item => ({
         productId: item.productId,
         name: item.name,
         quantity: item.quantity,
@@ -124,41 +95,61 @@ const Chat = () => {
         unit: item.unit
       }));
   
-      // Add items to the order
-      const itemsResponse = await fetch(`/orders/${orderToUse.order_id}/add-items`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ items: itemsToAdd })
-      });
+      // Format the date to YYYY-MM-DD
+      const [day, month, year] = orderDeliveryDate.split('.');
+      const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   
-      if (!itemsResponse.ok) {
-        const errorData = await itemsResponse.json();
-        throw new Error(errorData.error || 'שגיאה בהוספת פריטים להזמנה');
+      // Format the time to HH:MM-HH:MM
+      console.log('Original delivery time:', orderDeliveryTime);
+      console.log('Delivery time type:', typeof orderDeliveryTime);
+      console.log('Delivery time structure:', JSON.stringify(orderDeliveryTime, null, 2));
+      
+      let formattedTime;
+      if (typeof orderDeliveryTime === 'object' && orderDeliveryTime.start && orderDeliveryTime.end) {
+        formattedTime = `${orderDeliveryTime.start}-${orderDeliveryTime.end}`;
+        console.log('Using time range from object:', formattedTime);
+      } else if (typeof orderDeliveryTime === 'string') {
+        formattedTime = orderDeliveryTime;
+        console.log('Using time range from string:', formattedTime);
+      } else {
+        console.error('Invalid delivery time format:', orderDeliveryTime);
+        throw new Error('Invalid delivery time format');
       }
-  
-      const itemsResult = await itemsResponse.json();
+
+      console.log('Formatted delivery date:', formattedDate);
+      console.log('Formatted delivery time:', formattedTime);
+      
+      // Store cart items and order details in localStorage
+      localStorage.setItem("cartItems", JSON.stringify(itemsToStore));
+      localStorage.setItem("orderDetails", JSON.stringify({
+        supermarket: user?.supermarket || 'רמי לוי',
+        maxParticipants: orderMaxParticipants,
+        deliveryDate: formattedDate,
+        deliveryTime: formattedTime
+      }));
+      
+      console.log('Stored order details:', {
+        supermarket: user?.supermarket || 'רמי לוי',
+        maxParticipants: orderMaxParticipants,
+        deliveryDate: formattedDate,
+        deliveryTime: formattedTime
+      });
   
       // Add success message
       setMessages(msgs => [...msgs, { 
-        text: `✅ הזמנה מספר ${orderToUse.order_id} עודכנה בהצלחה!
-מספר פריטים: ${itemsToAdd.length}
-סופרמרקט: ${orderToUse.supermarket}`, 
+        text: `✅ העגלה נשמרה בהצלחה!
+מספר פריטים: ${itemsToStore.length}
+סופרמרקט: ${user?.supermarket || 'רמי לוי'}`, 
         sender: "ai" 
       }]);
-      
-      // Store order ID in localStorage for payment page
-      localStorage.setItem("currentOrderId", orderToUse.order_id);
       
       // Navigate to Payment
       navigate('/payment');
   
     } catch (error) {
-      console.error('Error creating order from cart:', error);
+      console.error('Error saving cart:', error);
       setMessages(msgs => [...msgs, { 
-        text: `שגיאה בעדכון הזמנה: ${error.message}`, 
+        text: `שגיאה בשמירת העגלה: ${error.message}`, 
         sender: "ai" 
       }]);
     } finally {
@@ -177,8 +168,10 @@ const Chat = () => {
         
         if (response.ok) {
           const data = await response.json();
+          console.log('User data from check-auth:', data);
           if (data.isAuthenticated) {
             setUser(data.user);
+            console.log('User data from users table:', data.user);
           } else {
             // Redirect to login if not authenticated
             navigate('/');
@@ -246,7 +239,8 @@ const Chat = () => {
 
     const handleConfirm = () => {
       if (selectedDate && selectedTime) {
-        onSelect(`${selectedDate} ${selectedTime.start}-${selectedTime.end}`);
+        // Pass date and time separately
+        onSelect(selectedDate, selectedTime);
       }
     };
 
@@ -683,7 +677,7 @@ const Chat = () => {
     
     // Proceed to checkout (future implementation)
     const handleCheckout = () => {
-    createOrderFromCart(orderMaxParticipants, orderDeliveryDate);
+    createOrderFromCart(orderMaxParticipants, orderDeliveryDate, null);
     };
 
     return (
@@ -940,12 +934,12 @@ const Chat = () => {
                   {msg.isDeliveryOptions && msg.deliveryOptions && (
                     <DeliveryOptions 
                       options={msg.deliveryOptions}
-                      onSelect={(time) => {
+                      onSelect={(date, time) => {
                         setMessages(msgs => [...msgs, { 
                           text: "מעביר אותך לדף התשלום...", 
                           sender: "ai" 
                         }]);
-                        navigate('/payment');
+                        createOrderFromCart(1, date, time);
                       }}
                     />
                   )}
