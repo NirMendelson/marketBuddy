@@ -1,16 +1,32 @@
 // src/Payment.js
 import React, { useEffect, useState } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import './Payment.css';
 
-const Payment = ({ orderTotal, isParticipant = false }) => {
+const Payment = ({ orderTotal = 0, isParticipant = false }) => {
   const navigate = useNavigate();
   const { orderId } = useParams();
+  const [searchParams] = useSearchParams();
   const [error, setError] = useState(null);
   const [cartItems, setCartItems] = useState([]);
   const [orderDetails, setOrderDetails] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [total, setTotal] = useState(orderTotal);
+
+  useEffect(() => {
+    // If total is passed as URL parameter, use that instead of the prop
+    const urlTotal = searchParams.get('total');
+    if (urlTotal) {
+      setTotal(parseFloat(urlTotal));
+    } else if (!isParticipant) {
+      // For non-participant orders, try to get total from localStorage
+      const storedTotal = localStorage.getItem("orderTotal");
+      if (storedTotal) {
+        setTotal(parseFloat(storedTotal));
+      }
+    }
+  }, [searchParams, isParticipant, orderTotal]);
 
   useEffect(() => {
     if (!isParticipant) {
@@ -39,6 +55,7 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
           headers: {
             'Content-Type': 'application/json'
           },
+          credentials: 'include', // Important for sessions
           body: JSON.stringify({
             paymentId,
             payerId,
@@ -51,17 +68,11 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
           })
         });
 
-        console.log('Server response status:', response.status);
-        const responseData = await response.json();
-        console.log('Server response data:', responseData);
-
         if (!response.ok) {
-          console.error('Server returned error:', responseData);
-          throw new Error(responseData.error || 'Failed to complete order');
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to complete order');
         }
 
-        console.log('Order completed successfully:', responseData);
-        
         // Redirect to success page
         navigate(`/payment-success?orderId=${orderId}`);
       } else {
@@ -72,33 +83,38 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
         });
         
         if (!userResponse.ok) {
-          console.error('Failed to get user data:', await userResponse.json());
           throw new Error('Failed to get user data');
         }
         
         const userData = await userResponse.json();
         console.log('User data:', userData);
+        
+        if (!userData.isAuthenticated) {
+          throw new Error('User is not authenticated');
+        }
+
         const supermarket = userData.user?.supermarket || 'רמי לוי';
         const orderDetails = JSON.parse(localStorage.getItem("orderDetails") || "{}");
         console.log('Order details from localStorage:', orderDetails);
 
         if (!orderDetails.deliveryDate || !orderDetails.deliveryTime) {
-          console.error('Missing delivery details:', orderDetails);
           throw new Error("Missing delivery date or time information");
         }
 
         const response = await fetch('/orders/create-after-payment', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Content-Type': 'application/json'
           },
+          credentials: 'include', // Important for sessions
           body: JSON.stringify({
             supermarket: supermarket,
             maxParticipants: orderDetails.maxParticipants || 1,
             deliveryDate: orderDetails.deliveryDate,
             deliveryTime: orderDetails.deliveryTime,
-            items: JSON.parse(localStorage.getItem("cartItems") || "[]")
+            items: JSON.parse(localStorage.getItem("cartItems") || "[]"),
+            paymentId: paymentId,
+            payerId: payerId
           })
         });
 
@@ -107,7 +123,6 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
         console.log('Create order response data:', orderData);
 
         if (!response.ok) {
-          console.error('Failed to create order:', orderData);
           throw new Error(orderData.message || 'Failed to create order');
         }
 
@@ -157,7 +172,7 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
     <div className="payment-container">
       <h2 className="payment-title">השלם תשלום עם PayPal</h2>
       <div className="payment-amount">
-        <p>סכום לתשלום: {orderTotal.toFixed(2)}₪</p>
+        <p>סכום לתשלום: {total.toFixed(2)}₪</p>
       </div>
       {error && (
         <div className="payment-error">
@@ -177,7 +192,7 @@ const Payment = ({ orderTotal, isParticipant = false }) => {
               purchase_units: [
                 {
                   amount: {
-                    value: orderTotal.toFixed(2),
+                    value: total.toFixed(2),
                     currency_code: "ILS"
                   }
                 }

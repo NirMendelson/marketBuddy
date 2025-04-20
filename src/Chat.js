@@ -119,6 +119,11 @@ const Chat = () => {
       console.log('Formatted delivery date:', formattedDate);
       console.log('Formatted delivery time:', formattedTime);
       
+      // Calculate the total
+      const deliveryFee = 30.0;
+      const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const total = subtotal + deliveryFee;
+      
       // Store cart items and order details in localStorage
       localStorage.setItem("cartItems", JSON.stringify(itemsToStore));
       localStorage.setItem("orderDetails", JSON.stringify({
@@ -127,12 +132,14 @@ const Chat = () => {
         deliveryDate: formattedDate,
         deliveryTime: formattedTime
       }));
+      localStorage.setItem("orderTotal", total.toFixed(2));
       
       console.log('Stored order details:', {
         supermarket: user?.supermarket || 'רמי לוי',
         maxParticipants: orderMaxParticipants,
         deliveryDate: formattedDate,
-        deliveryTime: formattedTime
+        deliveryTime: formattedTime,
+        total: total.toFixed(2)
       });
   
       // Add success message
@@ -143,8 +150,8 @@ const Chat = () => {
         sender: "ai" 
       }]);
       
-      // Navigate to Payment
-      navigate('/payment');
+      // Navigate to Payment with total as URL parameter
+      navigate(`/payment?total=${total.toFixed(2)}`);
   
     } catch (error) {
       console.error('Error saving cart:', error);
