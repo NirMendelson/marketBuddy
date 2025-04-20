@@ -110,35 +110,113 @@ async function createOrder(userEmail, supermarket, maxParticipants = 1, delivery
 /**
  * Add items to an order
  */
-async function addOrderItems(orderId, items, userEmail) {
+async function addOrderItems(orderId, messageOrItems, userEmail) {
   try {
-    const addedItems = [];
+    console.log('Processing order items:', messageOrItems);
     
-    // For each item, insert into order_items
-    for (const item of items) {
-      const { data, error } = await supabase
-        .from('order_items')
-        .insert([
-          {
+    // Check if we received a text message or pre-processed items
+    if (typeof messageOrItems === 'string') {
+      // Process the grocery list using GPT4API
+      const processedList = await processGroceryList(messageOrItems);
+      console.log('Processed list:', processedList);
+      
+      const addedItems = [];
+      
+      // For each item, check if it requires selection
+      for (const item of processedList.items) {
+        console.log('Processing item:', item);
+        if (item.matchedProducts && item.matchedProducts.length > 1) {
+          // If there are multiple matches, return options for selection
+          console.log('Multiple matches found, returning options');
+          return {
+            requiresSelection: true,
+            options: item.matchedProducts.map(product => ({
+              name: product.name,
+              price: product.price,
+              unit: item.unit,
+              quantity: item.quantity
+            }))
+          };
+        } else {
+          // If there's only one match or no matches, add it directly
+          const product = item.matchedProducts?.[0] || {
+            id: null,
+            name: item.product,
+            price: 0
+          };
+          
+          console.log('Adding item to database:', {
             order_id: orderId,
-            product_id: item.productId || null,
+            product_id: product.id,
             user_email: userEmail,
-            name: item.name,
+            name: product.name,
             quantity: item.quantity,
-            price: item.price,
+            price: product.price,
             unit: item.unit || 'יחידה'
+          });
+          
+          const { data, error } = await supabase
+            .from('order_items')
+            .insert([
+              {
+                order_id: orderId,
+                product_id: product.id,
+                user_email: userEmail,
+                name: product.name,
+                quantity: item.quantity,
+                price: product.price,
+                unit: item.unit || 'יחידה'
+              }
+            ])
+            .select();
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            console.log('Item added successfully:', data[0]);
+            addedItems.push(data[0]);
           }
-        ])
-        .select();
-      
-      if (error) throw error;
-      
-      if (data && data.length > 0) {
-        addedItems.push(data[0]);
+        }
       }
+      
+      console.log('Returning added items:', addedItems);
+      return {
+        requiresSelection: false,
+        items: addedItems
+      };
+    } else {
+      // Handle pre-processed items array
+      const addedItems = [];
+      for (const item of messageOrItems) {
+        console.log('Processing pre-processed item:', item);
+        const { data, error } = await supabase
+          .from('order_items')
+          .insert([
+            {
+              order_id: orderId,
+              product_id: item.productId,
+              user_email: userEmail,
+              name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              unit: item.unit || 'יחידה'
+            }
+          ])
+          .select();
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          console.log('Item added successfully:', data[0]);
+          addedItems.push(data[0]);
+        }
+      }
+      
+      return {
+        requiresSelection: false,
+        items: addedItems
+      };
     }
-    
-    return addedItems;
   } catch (error) {
     console.error('Error adding order items:', error);
     throw error;
@@ -437,28 +515,19 @@ app.post('/orders/process-list', isAuthenticated, async (req, res) => {
 });
 
 // Add selected items to an existing order
-app.post('/orders/:orderId/add-items', isAuthenticated, async (req, res) => {
+app.post('/orders/:orderId/add-items', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { items } = req.body;
-    const userEmail = req.session.user.email;
+    const { message } = req.body;
     
-    // Verify the order exists and belongs to the user or user is a participant
+    // Verify the order exists
     const order = await getOrderById(orderId);
     if (!order) {
       return res.status(404).json({ error: 'ההזמנה לא נמצאה' });
     }
     
-    // Check if user is a participant in this order
-    const isParticipant = order.participants && 
-                          order.participants.some(p => p.user_email === userEmail);
-    
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'אין לך הרשאה לערוך הזמנה זו' });
-    }
-    
     // Add the items to the order
-    const addedItems = await addOrderItems(orderId, items, userEmail);
+    const addedItems = await addOrderItems(orderId, message, req.session?.user?.email || 'guest');
     
     res.json({
       success: true,
@@ -470,35 +539,25 @@ app.post('/orders/:orderId/add-items', isAuthenticated, async (req, res) => {
   }
 });
 
-// Get all orders for the current user
-app.get('/orders', isAuthenticated, async (req, res) => {
+// Get all orders
+app.get('/orders', async (req, res) => {
   try {
-    const userEmail = req.session.user.email;
-    const orders = await getUserOrders(userEmail);
-    
+    const orders = await getAllOrders();
     res.json({ orders });
   } catch (error) {
-    console.error('Error getting user orders:', error);
+    console.error('Error getting orders:', error);
     res.status(500).json({ error: 'אירעה שגיאה בטעינת ההזמנות' });
   }
 });
 
 // Get a specific order by ID
-app.get('/orders/:orderId', isAuthenticated, async (req, res) => {
+app.get('/orders/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
     const order = await getOrderById(orderId);
     
     if (!order) {
       return res.status(404).json({ error: 'ההזמנה לא נמצאה' });
-    }
-    
-    // Check if user is a participant in this order
-    const isParticipant = order.participants &&
-                          order.participants.some(p => p.user_email === req.session.user.email);
-    
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'אין לך הרשאה לצפות בהזמנה זו' });
     }
     
     res.json({ order });
@@ -608,7 +667,8 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
       maxParticipants,
       deliveryDate,
       deliveryTime,
-      itemsCount: items.length
+      itemsCount: items.length,
+      items: items
     });
 
     // Create the order
@@ -621,8 +681,43 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
       deliveryTime
     );
 
+    console.log('Order created successfully:', order);
+
     // Add items to the order
-    const addedItems = await addOrderItems(order.order_id, items, userEmail);
+    const addedItems = [];
+    for (const item of items) {
+      try {
+        console.log('Processing item:', item);
+        const { data, error } = await supabase
+          .from('order_items')
+          .insert([
+            {
+              order_id: order.order_id,
+              product_id: item.productId,
+              user_email: userEmail,
+              name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              unit: item.unit || 'יחידה'
+            }
+          ])
+          .select();
+
+        if (error) {
+          console.error('Error adding item:', error);
+          throw error;
+        }
+
+        if (data && data.length > 0) {
+          addedItems.push(data[0]);
+        }
+      } catch (error) {
+        console.error('Error processing item:', error);
+        throw error;
+      }
+    }
+
+    console.log('All items added successfully:', addedItems);
 
     // Find and notify nearby users
     const nearbyUsers = await findNearbyUsers(userEmail);
@@ -675,7 +770,50 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating order after payment:', error);
-    res.status(500).json({ error: 'Failed to create order after payment' });
+    res.status(500).json({ 
+      error: 'Failed to create order after payment',
+      details: error.message
+    });
+  }
+});
+
+// Add new endpoint for selecting options
+app.post('/orders/:orderId/select-option', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { optionIndex } = req.body;
+    const userEmail = req.session?.user?.email || 'guest';
+    
+    // Get the order
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'ההזמנה לא נמצאה' });
+    }
+    
+    // Add the selected item to the order
+    const { data, error } = await supabase
+      .from('order_items')
+      .insert([
+        {
+          order_id: orderId,
+          user_email: userEmail,
+          name: req.body.name,
+          quantity: req.body.quantity,
+          price: req.body.price,
+          unit: req.body.unit
+        }
+      ])
+      .select();
+    
+    if (error) throw error;
+    
+    res.json({
+      requiresSelection: false,
+      items: data
+    });
+  } catch (error) {
+    console.error('Error selecting option:', error);
+    res.status(500).json({ error: 'אירעה שגיאה בבחירת האפשרות' });
   }
 });
 
