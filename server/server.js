@@ -781,8 +781,10 @@ app.post('/orders/create-after-payment', isAuthenticated, async (req, res) => {
 app.post('/orders/:orderId/select-option', async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { optionIndex } = req.body;
+    const { name, price, unit, quantity } = req.body;
     const userEmail = req.session?.user?.email || 'guest';
+    
+    console.log('Selecting option with data:', { name, price, unit, quantity });
     
     // Get the order
     const order = await getOrderById(orderId);
@@ -797,15 +799,18 @@ app.post('/orders/:orderId/select-option', async (req, res) => {
         {
           order_id: orderId,
           user_email: userEmail,
-          name: req.body.name,
-          quantity: req.body.quantity,
-          price: req.body.price,
-          unit: req.body.unit
+          name: name,
+          quantity: quantity,
+          price: price,
+          unit: unit || 'יחידה'
         }
       ])
       .select();
     
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
+    }
     
     res.json({
       requiresSelection: false,
@@ -814,6 +819,81 @@ app.post('/orders/:orderId/select-option', async (req, res) => {
   } catch (error) {
     console.error('Error selecting option:', error);
     res.status(500).json({ error: 'אירעה שגיאה בבחירת האפשרות' });
+  }
+});
+
+// Add payment completion endpoint
+app.post('/orders/:orderId/complete', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentId, payerId, items } = req.body;
+    
+    console.log('Received order completion request:', { orderId, paymentId, payerId, items });
+    
+    // First check if the order exists
+    console.log('Checking if order exists:', orderId);
+    const { data: existingOrder, error: fetchError } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('order_id', orderId)
+      .single();
+    
+    if (fetchError) {
+      console.error('Error fetching order:', fetchError);
+      return res.status(500).json({ error: 'Error checking order status' });
+    }
+    
+    if (!existingOrder) {
+      console.error('Order not found:', orderId);
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    console.log('Found existing order:', existingOrder);
+    
+    // Update order's updated_at
+    console.log('Updating order timestamp');
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({ 
+        updated_at: new Date().toISOString()
+      })
+      .eq('order_id', orderId);
+    
+    if (updateError) {
+      console.error('Error updating order timestamp:', updateError);
+      return res.status(500).json({ error: 'Failed to update order timestamp' });
+    }
+    
+    // Add items to order_items if provided
+    if (items && items.length > 0) {
+      console.log('Adding items to order_items:', items);
+      const orderItems = items.map(item => ({
+        order_id: orderId,
+        user_email: existingOrder.user_email,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        unit: item.unit,
+        created_at: new Date().toISOString()
+      }));
+      
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(orderItems);
+      
+      if (itemsError) {
+        console.error('Error adding items:', itemsError);
+        return res.status(500).json({ error: 'Failed to add items to order' });
+      }
+    }
+    
+    res.json({ 
+      success: true,
+      message: 'Order completed successfully'
+    });
+  } catch (error) {
+    console.error('Error completing order:', error);
+    res.status(500).json({ error: 'Failed to complete order' });
   }
 });
 

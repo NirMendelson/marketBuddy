@@ -1,113 +1,133 @@
 // src/Payment.js
 import React, { useEffect, useState } from 'react';
 import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import './Payment.css';
 
-const Payment = () => {
+const Payment = ({ orderTotal, isParticipant = false }) => {
   const navigate = useNavigate();
-  const [orderId, setOrderId] = useState(null);
+  const { orderId } = useParams();
   const [error, setError] = useState(null);
-  const total = parseFloat(localStorage.getItem("orderTotal") || "0");
   const [cartItems, setCartItems] = useState([]);
   const [orderDetails, setOrderDetails] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    // Get cart items and order details from localStorage
-    const items = JSON.parse(localStorage.getItem("cartItems") || "[]");
-    const details = JSON.parse(localStorage.getItem("orderDetails") || "{}");
-    
-    // Ensure supermarket has a default value
-    if (!details.supermarket) {
-      details.supermarket = 'רמי לוי'; // Default supermarket
+    if (!isParticipant) {
+      // Only get cart items and order details from localStorage for new orders
+      const items = JSON.parse(localStorage.getItem("cartItems") || "[]");
+      const details = JSON.parse(localStorage.getItem("orderDetails") || "{}");
+      
+      // Ensure supermarket has a default value
+      if (!details.supermarket) {
+        details.supermarket = 'רמי לוי'; // Default supermarket
+      }
+      
+      setCartItems(items);
+      setOrderDetails(details);
     }
-    
-    setCartItems(items);
-    setOrderDetails(details);
-  }, []);
+  }, [isParticipant]);
 
-  const createOrderAfterPayment = async () => {
+  const handlePaymentSuccess = async (paymentId, payerId) => {
+    console.log('Starting handlePaymentSuccess with:', { paymentId, payerId, isParticipant, orderId });
     try {
-      const cartItems = JSON.parse(localStorage.getItem("cartItems") || "[]");
-      const orderDetails = JSON.parse(localStorage.getItem("orderDetails") || "{}");
-      
-      console.log('Cart items from localStorage:', cartItems);
-      console.log('Order details from localStorage:', orderDetails);
-      
-      // Get user data from session
-      const userResponse = await fetch('/check-auth', {
-        credentials: 'include'
-      });
-      
-      if (!userResponse.ok) {
-        throw new Error('Failed to get user data');
+      if (isParticipant && orderId) {
+        console.log('Processing participant payment for order:', orderId);
+        // For participant orders, complete the existing order
+        const response = await fetch(`/orders/${orderId}/complete`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            paymentId,
+            payerId,
+            items: cartItems.map(item => ({
+              name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              unit: item.unit
+            }))
+          })
+        });
+
+        console.log('Server response status:', response.status);
+        const responseData = await response.json();
+        console.log('Server response data:', responseData);
+
+        if (!response.ok) {
+          console.error('Server returned error:', responseData);
+          throw new Error(responseData.error || 'Failed to complete order');
+        }
+
+        console.log('Order completed successfully:', responseData);
+        
+        // Redirect to success page
+        navigate(`/payment-success?orderId=${orderId}`);
+      } else {
+        console.log('Processing new order payment');
+        // For new orders, create the order after payment
+        const userResponse = await fetch('/check-auth', {
+          credentials: 'include'
+        });
+        
+        if (!userResponse.ok) {
+          console.error('Failed to get user data:', await userResponse.json());
+          throw new Error('Failed to get user data');
+        }
+        
+        const userData = await userResponse.json();
+        console.log('User data:', userData);
+        const supermarket = userData.user?.supermarket || 'רמי לוי';
+        const orderDetails = JSON.parse(localStorage.getItem("orderDetails") || "{}");
+        console.log('Order details from localStorage:', orderDetails);
+
+        if (!orderDetails.deliveryDate || !orderDetails.deliveryTime) {
+          console.error('Missing delivery details:', orderDetails);
+          throw new Error("Missing delivery date or time information");
+        }
+
+        const response = await fetch('/orders/create-after-payment', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            supermarket: supermarket,
+            maxParticipants: orderDetails.maxParticipants || 1,
+            deliveryDate: orderDetails.deliveryDate,
+            deliveryTime: orderDetails.deliveryTime,
+            items: JSON.parse(localStorage.getItem("cartItems") || "[]")
+          })
+        });
+
+        console.log('Create order response status:', response.status);
+        const orderData = await response.json();
+        console.log('Create order response data:', orderData);
+
+        if (!response.ok) {
+          console.error('Failed to create order:', orderData);
+          throw new Error(orderData.message || 'Failed to create order');
+        }
+
+        setOrderDetails(orderData);
+        localStorage.removeItem("cartItems");
+        localStorage.removeItem("orderDetails");
+        setShowSuccess(true);
+        
+        // Redirect to success page
+        navigate(`/payment-success?orderId=${orderData.order.order_id}`);
       }
-      
-      const userData = await userResponse.json();
-      console.log('User data from check-auth:', userData);
-      
-      const supermarket = userData.user?.supermarket || 'רמי לוי';
-
-      // Get delivery date and time from orderDetails
-      const deliveryDate = orderDetails.deliveryDate;
-      const deliveryTime = orderDetails.deliveryTime;
-
-      console.log('Delivery date from orderDetails:', deliveryDate);
-      console.log('Delivery time from orderDetails:', deliveryTime);
-
-      if (!deliveryDate || !deliveryTime) {
-        throw new Error("Missing delivery date or time information");
-      }
-
-      const response = await fetch('/orders/create-after-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          supermarket: supermarket,
-          maxParticipants: orderDetails.maxParticipants || 1,
-          deliveryDate: deliveryDate,
-          deliveryTime: deliveryTime,
-          items: cartItems
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create order');
-      }
-
-      const orderData = await response.json();
-      setOrderDetails(orderData);
-      localStorage.removeItem("cartItems");
-      localStorage.removeItem("orderDetails");
-      setShowSuccess(true);
-      return orderData;
     } catch (error) {
-      console.error('Error creating order:', error);
+      console.error('Error handling payment success:', error);
       setError(error.message);
-      return null;
     }
   };
 
   const onApprove = async (data, actions) => {
     try {
-      // Create the order in our database after PayPal payment is successful
-      const response = await createOrderAfterPayment();
-      
-      // Get the order ID from the response
-      const orderId = response.order.order_id;
-      
-      // Clear the cart and order details from localStorage
-      localStorage.removeItem("cartItems");
-      localStorage.removeItem("orderDetails");
-      localStorage.removeItem("orderTotal");
-      
-      // Redirect to success page with the order ID
-      navigate(`/payment-success?orderId=${orderId}`);
+      await handlePaymentSuccess(data.orderID, data.payerID);
     } catch (error) {
       console.error('Error after payment approval:', error);
       setError(error.message || 'An error occurred during payment processing');
@@ -137,7 +157,7 @@ const Payment = () => {
     <div className="payment-container">
       <h2 className="payment-title">השלם תשלום עם PayPal</h2>
       <div className="payment-amount">
-        <p>סכום לתשלום: {total.toFixed(2)}₪</p>
+        <p>סכום לתשלום: {orderTotal.toFixed(2)}₪</p>
       </div>
       {error && (
         <div className="payment-error">
@@ -157,7 +177,7 @@ const Payment = () => {
               purchase_units: [
                 {
                   amount: {
-                    value: total.toFixed(2),
+                    value: orderTotal.toFixed(2),
                     currency_code: "ILS"
                   }
                 }
