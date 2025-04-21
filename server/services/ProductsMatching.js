@@ -60,39 +60,43 @@ function calculateSimilarity(str1, str2) {
   const s1 = str1.toLowerCase();
   const s2 = str2.toLowerCase();
   
-  // Check for exact match
+  // Check for exact match first
   if (s1 === s2) return 1.0;
   
-  // Check if one string contains the other (but not vice versa)
-  const s1ContainsS2 = s1.includes(s2);
-  const s2ContainsS1 = s2.includes(s1);
-  
-  // If one contains the other but not vice versa, it's likely a partial match
-  if (s1ContainsS2 !== s2ContainsS1) {
-    // If the longer string contains the shorter one, it's likely a more specific product
-    if (s1.length > s2.length && s1ContainsS2) {
-      return 0.7; // More specific product gets a higher score
-    } else if (s2.length > s1.length && s2ContainsS1) {
-      return 0.6; // Less specific product gets a lower score
+  // Special handling for meat products
+  if (s1.includes('עוף') || s2.includes('עוף')) {
+    // For chicken products, prioritize exact name matches
+    const s1Words = s1.split(/\s+/);
+    const s2Words = s2.split(/\s+/);
+    
+    // Check if all words in the shorter string are contained in the longer one
+    const shorter = s1Words.length < s2Words.length ? s1Words : s2Words;
+    const longer = s1Words.length < s2Words.length ? s2Words : s1Words;
+    
+    const allWordsMatch = shorter.every(word => 
+      longer.some(longWord => longWord.includes(word))
+    );
+    
+    if (allWordsMatch) {
+      return 0.9; // High score for partial matches in meat products
     }
   }
   
-  // Calculate Levenshtein distance for non-exact matches
   const distance = levenshteinDistance(s1, s2);
   const maxLength = Math.max(s1.length, s2.length);
   
   // Prevent division by zero
   if (maxLength === 0) return 1.0;
   
-  // Base similarity score
+  // Calculate base similarity
   let similarity = 1 - distance / maxLength;
   
-  // Penalize partial matches that might be incorrect
-  if (similarity < 0.8) {
-    similarity *= 0.8; // Reduce score for partial matches
+  // Boost score for partial matches in Hebrew
+  if (s1.includes(s2) || s2.includes(s1)) {
+    similarity += 0.2;
   }
   
-  return similarity;
+  return Math.min(similarity, 1.0);
 }
 
 /**
@@ -157,6 +161,18 @@ async function findCandidateProducts(item) {
     const scoredProducts = products.map(product => {
       // Base similarity on product name (PRIMARY CRITERIA)
       let similarity = calculateSimilarity(product.name, item.product);
+      
+      // Special handling for meat products
+      if (item.product.includes('עוף')) {
+        // Boost for exact name matches in meat products
+        if (product.name === item.product) {
+          similarity = 1.0;
+        }
+        // Boost for partial matches that include the main product name
+        else if (product.name.includes(item.product) || item.product.includes(product.name)) {
+          similarity += 0.3;
+        }
+      }
       
       // Apply secondary criteria as score boosters
       

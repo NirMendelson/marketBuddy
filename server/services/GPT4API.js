@@ -66,51 +66,21 @@ exports.processGroceryList = async (message) => {
 };
 
 /**
- * Cleans and normalizes Hebrew text for JSON parsing
+ * Clean Hebrew text for JSON parsing
  * @param {string} text - The text to clean
  * @returns {string} - The cleaned text
  */
 function cleanHebrewText(text) {
   // Replace Hebrew quotes with regular quotes
-  text = text.replace(/["״]/g, '"');
+  text = text.replace(/״/g, '"');
+  text = text.replace(/׳/g, "'");
   
-  // Replace any problematic Hebrew characters
-  text = text.replace(/[׳]/g, "'");
-  
-  // Handle special cases for units
+  // Replace problematic Hebrew characters
   text = text.replace(/ק"ג/g, 'קילוגרם');
   text = text.replace(/מ"ל/g, 'מיליליטר');
   text = text.replace(/ל"ל/g, 'ליטר');
   
   return text;
-}
-
-/**
- * Cleans a JSON string for parsing
- * @param {string} jsonString - The JSON string to clean
- * @returns {string} - The cleaned JSON string
- */
-function cleanJsonString(jsonString) {
-  // Remove any markdown code block markers
-  jsonString = jsonString.replace(/```json\n?/g, '');
-  jsonString = jsonString.replace(/```\n?/g, '');
-  
-  // Remove any leading/trailing whitespace
-  jsonString = jsonString.trim();
-  
-  // Remove any BOM characters
-  jsonString = jsonString.replace(/^\uFEFF/, '');
-  
-  // Fix common JSON issues
-  jsonString = jsonString
-    // Fix missing commas between objects
-    .replace(/\}\s*\{/g, '},{')
-    // Fix missing commas between array elements
-    .replace(/"\s*"/g, '","')
-    // Fix missing quotes around property names
-    .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
-  
-  return jsonString;
 }
 
 /**
@@ -144,7 +114,7 @@ async function parseGroceryListWithGPT(message) {
             content: `You are a grocery shopping assistant that helps parse grocery lists in Hebrew.
                      For each item, extract the following:
                      - Quantity (the number of units the user wants to buy, default is 1 if not specified)
-                     - Unit (e.g., קילוגרם, יחידה, מיליליטר, ליטר)
+                     - Unit (e.g., גרם, קילוגרם, יחידה, מיליליטר, ליטר)
                      - Product name and details (including brand, percentage, etc.)
                      
                      Important: The quantity should represent how many of the product the user wants to order, 
@@ -169,9 +139,9 @@ async function parseGroceryListWithGPT(message) {
                      }
                      
                      Important: 
-                     1. Use full unit names (e.g., "קילוגרם" instead of "ק"ג")
-                     2. Make sure the JSON is properly formatted and all strings are properly escaped.
-                     3. Avoid using quotes within the unit or product names.`
+                     1. Make sure the JSON is properly formatted and all strings are properly escaped.
+                     2. Use full unit names (e.g., "קילוגרם" instead of "ק"ג")
+                     3. Avoid using quotes within unit or product names`
           },
           {
             role: 'user',
@@ -207,28 +177,9 @@ async function parseGroceryListWithGPT(message) {
       // Clean the content before parsing
       const cleanedContent = cleanHebrewText(content);
       console.log('Cleaned content:', cleanedContent);
-
+      
       // Try to parse the cleaned content
-      let parsedData;
-      try {
-        // First try to parse as is
-        parsedData = JSON.parse(cleanedContent);
-      } catch (e) {
-        // If that fails, try to clean the JSON string
-        const cleanJson = cleanJsonString(cleanedContent);
-        console.log('Cleaned JSON string:', cleanJson);
-        
-        try {
-          parsedData = JSON.parse(cleanJson);
-        } catch (e2) {
-          console.error('Failed to parse JSON after cleaning:', {
-            error: e2.message,
-            content: cleanJson
-          });
-          throw new Error(`Failed to parse AI response: ${e2.message}`);
-        }
-      }
-
+      const parsedData = JSON.parse(cleanedContent);
       console.log('Parsed JSON data:', parsedData);
 
       if (!parsedData.items || !Array.isArray(parsedData.items)) {

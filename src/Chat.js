@@ -325,11 +325,11 @@ const Chat = () => {
       setMessages([...messages, { text: userMessage, sender: "user" }]);
       setMessage(""); // Clear input field immediately for better UX
       
-      // Reset textarea height after sending
+      // Reset textarea height
       const textarea = document.querySelector('.chat-input');
       if (textarea) {
         textarea.style.height = 'auto';
-        textarea.style.height = '20px'; // Reset to original height
+        textarea.style.height = '20px'; // Set to minimum height
       }
       
       // Check if user wants to finish the order
@@ -427,13 +427,10 @@ const Chat = () => {
           const formattedOptions = uncertain.map(item => ({
             id: Date.now() + Math.random(),
             originalItem: item,
-            product: item.product, // Use the original product name
+            product: item.matchedProducts[0].name, // Use the matched product name
             quantity: item.quantity,
-            unit: item.unit,
-            options: item.matchedProducts.map(product => ({
-              ...product,
-              displayName: product.name // Store the database product name
-            }))
+            unit: item.matchedProducts[0].unit,
+            options: item.matchedProducts
           }));
           
           setPendingOptions(formattedOptions);
@@ -556,56 +553,58 @@ const Chat = () => {
   };
 
   // Handle option selection for a pending item
-  const handleOptionSelect = async (itemId, optionIndex) => {
-    const pendingItem = pendingOptions.find(item => item.id === itemId);
-    if (!pendingItem) return;
+  const handleOptionSelect = (itemId, optionIndex) => {
+    setPendingOptions(prev => 
+      prev.map(item => 
+        item.id === itemId 
+          ? { ...item, selectedOption: optionIndex }
+          : item
+      )
+    );
+  };
+
+  const handleConfirmAll = () => {
+    // Add all selected items to the grocery list
+    const selectedItems = pendingOptions
+      .filter(item => item.selectedOption !== undefined)
+      .map(item => {
+        const selectedOption = item.options[item.selectedOption];
+        return {
+          id: Date.now() + Math.random(),
+          name: selectedOption.name,
+          quantity: item.quantity,
+          unit: selectedOption.unit,
+          price: selectedOption.price,
+          productId: selectedOption.id,
+          isCertain: true,
+          selected: true
+        };
+      });
+
+    // Add the selected items to the grocery list
+    setGroceryItems(prev => [...prev, ...selectedItems]);
     
-    const selectedOption = pendingItem.options[optionIndex];
-    
-    // Add the selected item to the grocery list
-    const newItem = {
-      id: Date.now() + Math.random(),
-      name: selectedOption.name,
-      quantity: pendingItem.quantity,
-      unit: selectedOption.unit,
-      price: selectedOption.price,
-      productId: selectedOption.id,
-      isCertain: true,
-      selected: true,
-      alternativeOptions: pendingItem.options,
-      reasonForMatch: pendingItem.originalItem.reasonForMatch
-    };
-    
-    setGroceryItems(prev => [...prev, newItem]);
-    
-    // Remove the item from pending options
-    setPendingOptions(prev => prev.filter(item => item.id !== itemId));
+    // Clear the pending options
+    setPendingOptions([]);
     
     // Calculate totals
     const deliveryFee = 30.0;
-    const subtotal = groceryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0) + 
-                    (selectedOption.price * pendingItem.quantity);
+    const subtotal = selectedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const total = subtotal + deliveryFee;
     
-    // Create a single order summary message
-    let responseText = `סיכום הזמנה:\n`;
+    // Add order summary message
+    let summaryText = "סיכום הזמנה:\n\n";
     
-    // Add existing items
-    groceryItems.forEach(item => {
-      responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
+    selectedItems.forEach(item => {
+      summaryText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
     });
     
-    // Add the newly selected item
-    responseText += `- ${pendingItem.quantity} ${selectedOption.unit} ${selectedOption.name} - ${selectedOption.price}₪\n`;
+    summaryText += `\n- משלוח - ${deliveryFee}₪\n`;
+    summaryText += `סה"כ לתשלום: ${total.toFixed(2)}₪\n\n`;
+    summaryText += `לסיום ההזמנה הקלד "סיים"`;
     
-    // Add delivery and total
-    responseText += `- משלוח - ${deliveryFee}₪\n\n`;
-    responseText += `סה"כ ${total.toFixed(1)}₪\n\n`;
-    responseText += `לסיום ההזמנה הקלד "סיים"\nלהוספת פריטים נוספים, הקלד אותם כעת`;
-    
-    // Add the formatted response to chat
     setMessages(msgs => [...msgs, { 
-      text: responseText, 
+      text: summaryText, 
       sender: "ai" 
     }]);
   };
@@ -613,6 +612,13 @@ const Chat = () => {
   // Handle removing an item from the grocery list
   const handleRemoveItem = (itemId) => {
     setGroceryItems(items => items.filter(item => item.id !== itemId));
+    
+    // Reset textarea height
+    const textarea = document.querySelector('.chat-input');
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = '20px'; // Set to minimum height
+    }
   };
 
   // Handle Enter key press
@@ -669,18 +675,41 @@ const Chat = () => {
 
   // Render option buttons for pending items
   const OptionButtons = ({ item }) => {
+    // Format the option text with name, brand, size, and unit measure
+    const formatOptionText = (option) => {
+      console.log('Option data:', option); // Debug log
+      
+      const parts = [option.name];
+      
+      // Add brand if exists
+      if (option.brand) {
+        parts.push(option.brand);
+      }
+      
+      // Add size and unit if both exist
+      if (option.size && option.unit) {
+        parts.push(`${option.size} ${option.unit}`);
+      } else if (option.size) {
+        parts.push(`${option.size}`);
+      } else if (option.unit) {
+        parts.push(`${option.unit}`);
+      }
+      
+      return parts.join(', ');
+    };
+
     return (
       <div className="option-buttons">
-        <div className="option-product">{item.product} ({item.quantity} {item.unit || ''})</div>
+        <div className="option-product">{item.originalItem.product}</div>
         <div className="option-list">
           {item.options.slice(0, 3).map((option, index) => (
             <button 
               key={index} 
-              className={`option-button ${option.isSelectedByGPT ? 'ai-recommended' : ''}`}
+              className={`option-button ${item.selectedOption === index ? 'selected' : ''}`}
               onClick={() => handleOptionSelect(item.id, index)}
             >
-              {option.isSelectedByGPT && <FiCheck size={14} className="ai-pick" />} 
-              {option.displayName} ({option.brand || 'ללא מותג'}) - {option.price}₪
+              {item.selectedOption === index && <FiCheck size={14} className="ai-pick" />} 
+              {formatOptionText(option)} - {option.price}₪
             </button>
           ))}
         </div>
@@ -971,6 +1000,13 @@ const Chat = () => {
                       {pendingOptions.map(item => (
                         <OptionButtons key={item.id} item={item} />
                       ))}
+                      <button 
+                        className="confirm-delivery" 
+                        onClick={handleConfirmAll}
+                        disabled={!pendingOptions.some(item => item.selectedOption !== undefined)}
+                      >
+                        <FiCheck size={20} /> אישור
+                      </button>
                     </div>
                   )}
                   
