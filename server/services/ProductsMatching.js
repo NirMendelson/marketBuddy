@@ -143,6 +143,11 @@ function extractSpecifications(productName) {
 async function findCandidateProducts(item) {
   try {
     console.log(`Finding candidate products for: ${JSON.stringify(item)}`);
+    console.log('Input item unit:', {
+      product: item.product,
+      unit: item.unit,
+      rawItem: item
+    });
     
     // Get products from Supabase
     const { data: products, error } = await supabase
@@ -162,6 +167,12 @@ async function findCandidateProducts(item) {
       const productName = product.name.toLowerCase();
       const searchName = baseProductName.toLowerCase();
       
+      console.log('Product unit check:', {
+        productName: product.name,
+        unit_measure: product.unit_measure,
+        rawProduct: product
+      });
+      
       // Special handling for cheese products
       if (searchName.includes('גבינה') || searchName.includes('מוצרלה')) {
         // For cheese products, check if either the product name or search term contains cheese-related words
@@ -179,8 +190,8 @@ async function findCandidateProducts(item) {
       console.log(`${index + 1}. ${product.name} (${product.brand || 'No brand'}, ${product.size || 'No size'} ${product.unit_measure || 'No unit'}, ${product.price} ₪)`);
     });
 
-    // Extract size from the input product name
-    const sizeMatch = item.product.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+    // Extract size and unit from the input product name
+    const sizeMatch = item.product.match(/(\d+)\s*(גרם|ק"ג|קילוגרם|מ"ל|ליטר)/);
     const inputSize = sizeMatch ? parseInt(sizeMatch[1]) : null;
     const inputUnit = sizeMatch ? sizeMatch[2] : null;
 
@@ -201,23 +212,42 @@ async function findCandidateProducts(item) {
     // For other products, find the closest size match
     let candidates = nameMatches;
     if (inputSize) {
-      // Convert input size to grams for comparison
-      const inputSizeInGrams = inputUnit === 'ק"ג' || inputUnit === 'קילוגרם' ? inputSize * 1000 : inputSize;
+      // Convert input size to base unit (grams for weight, ml for liquids)
+      let inputSizeInBaseUnit;
+      if (inputUnit === 'ק"ג' || inputUnit === 'קילוגרם') {
+        inputSizeInBaseUnit = inputSize * 1000; // Convert kg to grams
+      } else if (inputUnit === 'ליטר') {
+        inputSizeInBaseUnit = inputSize * 1000; // Convert liters to ml
+      } else {
+        inputSizeInBaseUnit = inputSize;
+      }
       
       // Find products that can be combined to match the requested size
       candidates = nameMatches.filter(product => {
-        const productSizeMatch = product.name.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+        const productSizeMatch = product.name.match(/(\d+)\s*(גרם|ק"ג|קילוגרם|מ"ל|ליטר)/);
         if (!productSizeMatch) return false;
         
         const productSize = parseInt(productSizeMatch[1]);
         const productUnit = productSizeMatch[2];
         
-        // Convert product size to grams
-        const productSizeInGrams = productUnit === 'ק"ג' || productUnit === 'קילוגרם' ? productSize * 1000 : productSize;
+        // Convert product size to base unit
+        let productSizeInBaseUnit;
+        if (productUnit === 'ק"ג' || productUnit === 'קילוגרם') {
+          productSizeInBaseUnit = productSize * 1000; // Convert kg to grams
+        } else if (productUnit === 'ליטר') {
+          productSizeInBaseUnit = productSize * 1000; // Convert liters to ml
+        } else {
+          productSizeInBaseUnit = productSize;
+        }
         
-        // Check if the product size is a divisor of the input size
-        // This means we can buy multiple of this product to match the requested size
-        return inputSizeInGrams % productSizeInGrams === 0;
+        // For liquid products (like oil), allow any size that can be combined to reach the target
+        // For example, if requesting 3 liters, allow 1 liter bottles
+        if (inputUnit === 'ליטר' || inputUnit === 'מ"ל') {
+          return productSizeInBaseUnit <= inputSizeInBaseUnit;
+        }
+        
+        // For other products, check if the product size is a divisor of the input size
+        return inputSizeInBaseUnit % productSizeInBaseUnit === 0;
       });
       
       // If no candidates found with exact size match, return all name matches
@@ -235,6 +265,13 @@ async function findCandidateProducts(item) {
       const specs = extractSpecifications(item.product);
       const productSpecs = extractSpecifications(product.name);
       
+      console.log('Scoring candidate:', {
+        inputItem: item,
+        product: product,
+        specs: specs,
+        productSpecs: productSpecs
+      });
+      
       let similarity = 0;
       
       // Name match is already guaranteed, so give it full points
@@ -245,6 +282,16 @@ async function findCandidateProducts(item) {
         const inputSizeInGrams = specs.sizeUnit === 'ק"ג' || specs.sizeUnit === 'קילוגרם' ? specs.size * 1000 : specs.size;
         const productSizeInGrams = productSpecs.sizeUnit === 'ק"ג' || productSpecs.sizeUnit === 'קילוגרם' ? productSpecs.size * 1000 : productSpecs.size;
         
+        console.log('Size comparison:', {
+          inputSize: specs.size,
+          inputUnit: specs.sizeUnit,
+          inputSizeInGrams,
+          productSize: productSpecs.size,
+          productUnit: productSpecs.sizeUnit,
+          productSizeInGrams,
+          isDivisor: inputSizeInGrams % productSizeInGrams === 0
+        });
+        
         if (inputSizeInGrams % productSizeInGrams === 0) {
           similarity += 0.3;
         }
@@ -252,6 +299,11 @@ async function findCandidateProducts(item) {
       
       // Unit match
       if (specs.sizeUnit && productSpecs.sizeUnit && specs.sizeUnit === productSpecs.sizeUnit) {
+        console.log('Unit match:', {
+          inputUnit: specs.sizeUnit,
+          productUnit: productSpecs.sizeUnit,
+          isMatch: specs.sizeUnit === productSpecs.sizeUnit
+        });
         similarity += 0.2;
       }
       
@@ -298,6 +350,59 @@ async function gptSelectBestMatch(item, candidates, gptApiCall) {
     };
   }
   
+  // Special handling for olive oil
+  if (item.product === 'שמן זית') {
+    return {
+      matched: true,
+      product: candidates[0].product,
+      confidence: 0.9,
+      matchedProducts: candidates.map(c => c.product),
+      message: "Found olive oil products that can be combined to match the requested quantity",
+      isCertain: false
+    };
+  }
+  
+  // Special handling for liquid products (oil, etc.)
+  if (item.unit === 'ליטר' || item.unit === 'מ"ל') {
+    // Find the largest available size
+    const largestSize = candidates.reduce((max, candidate) => {
+      const sizeMatch = candidate.product.name.match(/(\d+)\s*(ליטר|מ"ל)/);
+      if (!sizeMatch) return max;
+      
+      const size = parseInt(sizeMatch[1]);
+      const unit = sizeMatch[2];
+      
+      // Convert to ml for comparison
+      const sizeInMl = unit === 'ליטר' ? size * 1000 : size;
+      return Math.max(max, sizeInMl);
+    }, 0);
+    
+    // If we found a suitable size, return all candidates with that size
+    if (largestSize > 0) {
+      const matchingCandidates = candidates.filter(candidate => {
+        const sizeMatch = candidate.product.name.match(/(\d+)\s*(ליטר|מ"ל)/);
+        if (!sizeMatch) return false;
+        
+        const size = parseInt(sizeMatch[1]);
+        const unit = sizeMatch[2];
+        const sizeInMl = unit === 'ליטר' ? size * 1000 : size;
+        
+        return sizeInMl === largestSize;
+      });
+      
+      if (matchingCandidates.length > 0) {
+        return {
+          matched: true,
+          product: matchingCandidates[0].product,
+          confidence: 0.9,
+          matchedProducts: matchingCandidates.map(c => c.product),
+          message: `Found ${matchingCandidates.length} products that can be combined to match the requested quantity`,
+          isCertain: false
+        };
+      }
+    }
+  }
+  
   // Special handling for cheese products - return all matching options
   if (item.product.includes('גבינה')) {
     // Extract size from the input product name
@@ -323,11 +428,11 @@ async function gptSelectBestMatch(item, candidates, gptApiCall) {
     if (matchingSizeCandidates.length > 0) {
       return {
         matched: true,
-        product: matchingSizeCandidates[0].product, // Keep the first one as default
+        product: matchingSizeCandidates[0].product,
         confidence: matchingSizeCandidates[0].similarity,
         matchedProducts: matchingSizeCandidates.map(c => c.product),
         message: "Multiple cheese options found with matching size",
-        isCertain: false // Set to false to ensure options are shown
+        isCertain: false
       };
     }
   }

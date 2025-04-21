@@ -445,12 +445,23 @@ const Chat = () => {
             
             // Add existing items
             groceryItems.forEach(item => {
+              console.log('Grocery item unit:', {
+                itemName: item.name,
+                unit: item.unit_measure,
+                rawItem: item
+              });
               responseText += `- ${item.quantity} ${item.unit_measure || 'יחידה'} ${item.name} - ${item.price}₪\n`;
             });
             
             // Add new items
             certain.forEach(item => {
               const topMatch = item.matchedProducts[0];
+              console.log('New item unit:', {
+                itemName: item.product,
+                unit: item.unit,
+                rawItem: item,
+                topMatch: topMatch
+              });
               responseText += `- ${item.quantity} ${item.unit || 'יחידה'} ${topMatch.name} - ${topMatch.price}₪\n`;
             });
             
