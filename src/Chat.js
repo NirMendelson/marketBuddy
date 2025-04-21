@@ -395,16 +395,11 @@ const Chat = () => {
           
           // Convert the response format to match what the frontend expects
           const processedItems = aiResponse.items.map(item => ({
-            isCertain: (item.confidence >= 0.9) || (item.confidence >= 0.8 && item.matchedProducts && item.matchedProducts.length === 1),
-            matchedProducts: item.matchedProducts || [{
-              name: item.matchedProductName || item.product,
-              unit: item.unit,
-              price: item.price || 0,
-              id: null
-            }],
+            isCertain: item.isCertain,
+            matchedProducts: item.matchedProducts || [],
             product: item.product,
             quantity: item.quantity,
-            unit: item.unit,
+            unit: item.unit || 'יחידה', // Default to 'יחידה' if unit is undefined
             confidence: item.confidence
           }));
           
@@ -429,7 +424,7 @@ const Chat = () => {
             originalItem: item,
             product: item.matchedProducts[0].name, // Use the matched product name
             quantity: item.quantity,
-            unit: item.matchedProducts[0].unit,
+            unit: item.unit,
             options: item.matchedProducts
           }));
           
@@ -456,7 +451,7 @@ const Chat = () => {
             // Add new items
             certain.forEach(item => {
               const topMatch = item.matchedProducts[0];
-              responseText += `- ${item.quantity} ${topMatch.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
+              responseText += `- ${item.quantity} ${item.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
             });
             
             responseText += `- משלוח - ${deliveryFee}₪\n\n`;

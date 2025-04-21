@@ -80,6 +80,20 @@ function cleanHebrewText(text) {
   text = text.replace(/מ"ל/g, 'מיליליטר');
   text = text.replace(/ל"ל/g, 'ליטר');
   
+  // Add quotes around Hebrew strings in JSON, but only if they're not already quoted
+  text = text.replace(/(\s*"unit":\s*)([^",\n]+)(,?)/g, (match, prefix, value, suffix) => {
+    if (!value.startsWith('"')) {
+      return `${prefix}"${value}"${suffix}`;
+    }
+    return match;
+  });
+  
+  text = text.replace(/(\s*"product":\s*)([^",\n]+)(,?)/g, (match, prefix, value, suffix) => {
+    // Remove any existing quotes and add new ones
+    const cleanValue = value.replace(/^"|"$/g, '');
+    return `${prefix}"${cleanValue}"${suffix}`;
+  });
+  
   return text;
 }
 
@@ -229,15 +243,23 @@ async function callGPT4ForProductSelection(prompt) {
             role: 'system',
             content: `You are a grocery shopping assistant that helps match grocery items to products in a database.
                      You will receive a grocery item and a list of candidate products.
-                     When matching, prioritize product name matches first, then consider specifications like percentage (%) content, size, and brand.
-                     Select the best matching product and explain your reasoning.`
+                     
+                     For cheese products (גבינה), return ALL products that match the specified size.
+                     For other products, select the best matching product.
+                     
+                     Return your response as a JSON object with the following structure:
+                     {
+                       "selectedIndices": [number], // Array of 1-based indices of matching products
+                       "confidence": number, // Your confidence in these matches from 0 to 1
+                       "reasoning": string // Brief explanation of why these are the best matches
+                     }`
           },
           {
             role: 'user',
             content: prompt
           }
         ],
-        temperature: 0.2, // Lower temperature for more consistent responses
+        temperature: 0.2,
         max_tokens: 500,
         top_p: 0.95,
         frequency_penalty: 0,

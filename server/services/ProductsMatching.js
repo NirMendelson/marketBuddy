@@ -9,7 +9,7 @@
 const { supabase } = require('../config/db');
 
 // Thresholds and constants
-const NAME_MATCH_THRESHOLD = 0.5; // Higher threshold for product name matching
+const NAME_MATCH_THRESHOLD = 0.3; // Lower threshold for product name matching
 const MAX_CANDIDATES_FOR_GPT = 5;  // Maximum number of candidates to send to GPT-4
 
 /**
@@ -153,75 +153,102 @@ async function findCandidateProducts(item) {
     
     console.log(`Fetched ${products.length} products from Supabase`);
     
-    // Extract specifications from the product name
-    const specs = extractSpecifications(item.product);
-    console.log(`Extracted specifications: ${JSON.stringify(specs)}`);
+    // Extract the base product name (without size/unit)
+    const baseProductName = item.product.split(/\d/)[0].trim();
+    console.log(`Base product name: ${baseProductName}`);
     
-    // Score each product with primary focus on name matching
-    const scoredProducts = products.map(product => {
-      // Base similarity on product name (PRIMARY CRITERIA)
-      let similarity = calculateSimilarity(product.name, item.product);
-      
-      // Special handling for meat products
-      if (item.product.includes('עוף')) {
-        // Boost for exact name matches in meat products
-        if (product.name === item.product) {
-          similarity = 1.0;
+    // First, find products that contain the base product name
+    const nameMatches = products.filter(product => {
+      const productName = product.name.toLowerCase();
+      const searchName = baseProductName.toLowerCase();
+      return productName.includes(searchName);
+    });
+
+    console.log(`Found ${nameMatches.length} products with matching name`);
+    console.log('All matching products:');
+    nameMatches.forEach((product, index) => {
+      console.log(`${index + 1}. ${product.name} (${product.brand || 'No brand'}, ${product.size || 'No size'} ${product.unit_measure || 'No unit'}, ${product.price} ₪)`);
+    });
+
+    // Extract size from the input product name
+    const sizeMatch = item.product.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+    const inputSize = sizeMatch ? parseInt(sizeMatch[1]) : null;
+    const inputUnit = sizeMatch ? sizeMatch[2] : null;
+
+    // For cheese products, return all name matches without size filtering
+    if (item.product.includes('גבינה')) {
+      console.log('Cheese product detected - returning all name matches');
+      return nameMatches.map(product => ({
+        product,
+        similarity: 1.0,
+        matchDetails: {
+          nameMatch: true,
+          hasMatchingSize: false,
+          hasMatchingUnit: false
         }
-        // Boost for partial matches that include the main product name
-        else if (product.name.includes(item.product) || item.product.includes(product.name)) {
-          similarity += 0.3;
-        }
+      }));
+    }
+
+    // For other products, filter by size if specified
+    let candidates = nameMatches;
+    if (inputSize) {
+      candidates = nameMatches.filter(product => {
+        const productSizeMatch = product.name.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+        if (!productSizeMatch) return false;
+        
+        const productSize = parseInt(productSizeMatch[1]);
+        const productUnit = productSizeMatch[2];
+        
+        // Convert to grams for comparison if needed
+        const inputSizeInGrams = inputUnit === 'ק"ג' || inputUnit === 'קילוגרם' ? inputSize * 1000 : inputSize;
+        const productSizeInGrams = productUnit === 'ק"ג' || productUnit === 'קילוגרם' ? productSize * 1000 : productSize;
+        
+        return inputSizeInGrams === productSizeInGrams;
+      });
+      console.log(`Filtered to ${candidates.length} products with matching size`);
+    }
+
+    // Score the remaining candidates
+    const scoredCandidates = candidates.map(product => {
+      const specs = extractSpecifications(item.product);
+      const productSpecs = extractSpecifications(product.name);
+      
+      let similarity = 0;
+      
+      // Name match is already guaranteed, so give it full points
+      similarity += 0.5;
+      
+      // Size match
+      if (specs.size && productSpecs.size && specs.size === productSpecs.size) {
+        similarity += 0.3;
       }
       
-      // Apply secondary criteria as score boosters
-      
-      // Boost for matching unit
-      if (item.unit && product.unit_measure === item.unit) {
-        similarity += 0.05;
+      // Unit match
+      if (specs.sizeUnit && productSpecs.sizeUnit && specs.sizeUnit === productSpecs.sizeUnit) {
+        similarity += 0.2;
       }
-      
-      // Boost for matching percentage if specified
-      if (specs.percentage && product.name.includes(`${specs.percentage}%`)) {
-        similarity += 0.15;
-      }
-      
-      // Boost for matching brand if specified
-      if (specs.brand && product.brand === specs.brand) {
-        similarity += 0.15;
-      }
-      
-      // Boost for matching size if specified
-      if (specs.size && product.size === specs.size) {
-        similarity += 0.1;
-      }
-      
-      // Cap similarity at 1.0
-      similarity = Math.min(similarity, 1.0);
       
       return {
         product,
         similarity,
-        // Include detailed matching info for debugging
         matchDetails: {
-          nameMatch: calculateSimilarity(product.name, item.product),
-          hasMatchingUnit: item.unit && product.unit_measure === item.unit,
-          hasMatchingPercentage: specs.percentage && product.name.includes(`${specs.percentage}%`),
-          hasMatchingBrand: specs.brand && product.brand === specs.brand,
-          hasMatchingSize: specs.size && product.size === specs.size
+          nameMatch: true,
+          hasMatchingSize: specs.size && productSpecs.size && specs.size === productSpecs.size,
+          hasMatchingUnit: specs.sizeUnit && productSpecs.sizeUnit && specs.sizeUnit === productSpecs.sizeUnit,
+          hasMatchingPercentage: specs.percentage && productSpecs.percentage && specs.percentage === productSpecs.percentage,
+          hasMatchingBrand: specs.brand && productSpecs.brand && specs.brand === productSpecs.brand
         }
       };
     });
     
-    // Filter by name match threshold and sort by similarity (highest first)
-    const candidates = scoredProducts
-      .filter(item => item.similarity >= NAME_MATCH_THRESHOLD)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, MAX_CANDIDATES_FOR_GPT); // Limit number of candidates
+    console.log(`Found ${scoredCandidates.length} final candidates`);
+    console.log('Top candidates:', scoredCandidates.map(c => ({
+      name: c.product.name,
+      similarity: c.similarity,
+      details: c.matchDetails
+    })));
     
-    console.log(`Found ${candidates.length} candidate products above threshold ${NAME_MATCH_THRESHOLD}`);
-    
-    return candidates;
+    return scoredCandidates;
   } catch (error) {
     console.error("Error finding candidate products:", error);
     return []; // Return empty array on error
@@ -244,13 +271,49 @@ async function gptSelectBestMatch(item, candidates, gptApiCall) {
     };
   }
   
+  // Special handling for cheese products - return all matching options
+  if (item.product.includes('גבינה')) {
+    // Extract size from the input product name
+    const sizeMatch = item.product.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+    const inputSize = sizeMatch ? parseInt(sizeMatch[1]) : null;
+    const inputUnit = sizeMatch ? sizeMatch[2] : null;
+
+    // Filter candidates to only include those with matching size
+    const matchingSizeCandidates = candidates.filter(candidate => {
+      const productSizeMatch = candidate.product.name.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
+      if (!productSizeMatch) return false;
+      
+      const productSize = parseInt(productSizeMatch[1]);
+      const productUnit = productSizeMatch[2];
+      
+      // Convert to grams for comparison if needed
+      const inputSizeInGrams = inputUnit === 'ק"ג' || inputUnit === 'קילוגרם' ? inputSize * 1000 : inputSize;
+      const productSizeInGrams = productUnit === 'ק"ג' || productUnit === 'קילוגרם' ? productSize * 1000 : productSize;
+      
+      return inputSizeInGrams === productSizeInGrams;
+    });
+
+    if (matchingSizeCandidates.length > 0) {
+      return {
+        matched: true,
+        product: matchingSizeCandidates[0].product, // Keep the first one as default
+        confidence: matchingSizeCandidates[0].similarity,
+        matchedProducts: matchingSizeCandidates.map(c => c.product),
+        message: "Multiple cheese options found with matching size",
+        isCertain: false // Set to false to ensure options are shown
+      };
+    }
+  }
+  
   // If only one candidate with high similarity, return it directly without calling GPT-4
   if (candidates.length === 1 && candidates[0].similarity > 0.9) {
     return {
       matched: true,
       product: candidates[0].product,
       confidence: candidates[0].similarity,
-      message: "Single high-confidence match found"
+      matchedProducts: [candidates[0].product],
+      message: "Single high-confidence match found",
+      isCertain: true
     };
   }
   
@@ -278,9 +341,9 @@ ${candidatesText}
 
 Please analyze these candidates and select the best match for the original item. Return your response as a JSON object with the following structure:
 {
-  "selectedIndex": number, // The 1-based index of the best matching product (or 0 if none match well)
-  "confidence": number, // Your confidence in this match from 0 to 1
-  "reasoning": string // Brief explanation of why this is the best match
+  "selectedIndices": [number], // Array of 1-based indices of matching products
+  "confidence": number, // Your confidence in these matches from 0 to 1
+  "reasoning": string // Brief explanation of why these are the best matches
 }`;
 
     console.log("Sending candidate products to GPT-4 for selection");
@@ -310,24 +373,31 @@ Please analyze these candidates and select the best match for the original item.
     }
     
     // Process the match result
-    if (matchResult.selectedIndex > 0 && matchResult.selectedIndex <= candidates.length) {
-      const selectedCandidate = candidates[matchResult.selectedIndex - 1];
+    if (matchResult.selectedIndices && matchResult.selectedIndices.length > 0) {
+      const selectedCandidates = matchResult.selectedIndices
+        .filter(index => index > 0 && index <= candidates.length)
+        .map(index => candidates[index - 1]);
       
-      return {
-        matched: true,
-        product: selectedCandidate.product,
-        confidence: matchResult.confidence,
-        reasoning: matchResult.reasoning,
-        message: "GPT-4 selected the best product match"
-      };
-    } else {
-      return {
-        matched: false,
-        confidence: matchResult.confidence,
-        reasoning: matchResult.reasoning,
-        message: "GPT-4 did not find a suitable match"
-      };
+      if (selectedCandidates.length > 0) {
+        return {
+          matched: true,
+          product: selectedCandidates[0].product, // Keep the first one as default
+          confidence: matchResult.confidence,
+          matchedProducts: selectedCandidates.map(c => c.product),
+          reasoning: matchResult.reasoning,
+          message: "GPT-4 selected the best product matches",
+          isCertain: false // Set to false to ensure options are shown
+        };
+      }
     }
+    
+    return {
+      matched: false,
+      confidence: matchResult.confidence,
+      reasoning: matchResult.reasoning,
+      message: "GPT-4 did not find a suitable match",
+      isCertain: false
+    };
   } catch (error) {
     // Error handling - fallback to highest fuzzy match if GPT-4 fails
     console.error("Error in GPT product selection:", error);
@@ -338,12 +408,15 @@ Please analyze these candidates and select the best match for the original item.
         matched: true,
         product: candidates[0].product,
         confidence: candidates[0].similarity,
-        message: "Fallback to highest fuzzy match score due to GPT-4 error"
+        matchedProducts: [candidates[0].product],
+        message: "Fallback to highest fuzzy match score due to GPT-4 error",
+        isCertain: false
       };
     } else {
       return {
         matched: false,
-        message: "No product matches found and GPT-4 selection failed"
+        message: "No product matches found and GPT-4 selection failed",
+        isCertain: false
       };
     }
   }
@@ -371,39 +444,11 @@ exports.processItemsWithHybridMatching = async function(items, gptApiCall) {
     // Format the result
     const processedItem = {
       ...item,
-      isCertain: matchResult.matched && matchResult.confidence > 0.8,
+      isCertain: matchResult.matched && matchResult.confidence > 0.8 && matchResult.matchedProducts.length === 1,
       confidence: matchResult.confidence || 0,
       reasonForMatch: matchResult.reasoning || matchResult.message,
-      matchedProducts: candidates.map(candidate => ({
-        id: candidate.product.product_id,
-        name: candidate.product.name,
-        brand: candidate.product.brand,
-        size: candidate.product.size,
-        unit: candidate.product.unit_measure,
-        price: candidate.product.price,
-        confidence: candidate.similarity
-      }))
+      matchedProducts: matchResult.matchedProducts || []
     };
-    
-    // If we have a match, add it as the first item in matchedProducts
-    if (matchResult.matched) {
-      // Remove the matched product if it already exists in the list
-      processedItem.matchedProducts = processedItem.matchedProducts.filter(
-        p => p.id !== matchResult.product.product_id
-      );
-      
-      // Add it as the first item
-      processedItem.matchedProducts.unshift({
-        id: matchResult.product.product_id,
-        name: matchResult.product.name,
-        brand: matchResult.product.brand,
-        size: matchResult.product.size,
-        unit: matchResult.product.unit_measure,
-        price: matchResult.product.price,
-        confidence: matchResult.confidence,
-        isSelectedByGPT: true
-      });
-    }
     
     processedItems.push(processedItem);
   }
