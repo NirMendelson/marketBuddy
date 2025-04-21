@@ -682,22 +682,29 @@ const Chat = () => {
       }
       
       // Add size and unit if both exist
-      if (option.size && option.unit) {
-        parts.push(`${option.size} ${option.unit}`);
+      if (option.size && option.unit_measure) {
+        parts.push(`${option.size} ${option.unit_measure}`);
       } else if (option.size) {
         parts.push(`${option.size}`);
-      } else if (option.unit) {
-        parts.push(`${option.unit}`);
+      } else if (option.unit_measure) {
+        parts.push(`${option.unit_measure}`);
       }
       
       return parts.join(', ');
     };
 
+    // Auto-select the first option if there's only one
+    useEffect(() => {
+      if (item.options.length === 1 && item.selectedOption === undefined) {
+        handleOptionSelect(item.id, 0);
+      }
+    }, [item.id, item.options.length, item.selectedOption]);
+
     return (
       <div className="option-buttons">
         <div className="option-product">{item.originalItem.product}</div>
         <div className="option-list">
-          {item.options.slice(0, 3).map((option, index) => (
+          {item.options.map((option, index) => (
             <button 
               key={index} 
               className={`option-button ${item.selectedOption === index ? 'selected' : ''}`}

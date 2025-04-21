@@ -161,6 +161,15 @@ async function findCandidateProducts(item) {
     const nameMatches = products.filter(product => {
       const productName = product.name.toLowerCase();
       const searchName = baseProductName.toLowerCase();
+      
+      // Special handling for cheese products
+      if (searchName.includes('גבינה') || searchName.includes('מוצרלה')) {
+        // For cheese products, check if either the product name or search term contains cheese-related words
+        const cheeseWords = ['גבינה', 'מוצרלה', 'צהובה', 'לבנה', 'מגורדת'];
+        return cheeseWords.some(word => productName.includes(word)) && 
+               cheeseWords.some(word => searchName.includes(word));
+      }
+      
       return productName.includes(searchName);
     });
 
@@ -176,7 +185,7 @@ async function findCandidateProducts(item) {
     const inputUnit = sizeMatch ? sizeMatch[2] : null;
 
     // For cheese products, return all name matches without size filtering
-    if (item.product.includes('גבינה')) {
+    if (item.product.includes('גבינה') || item.product.includes('מוצרלה')) {
       console.log('Cheese product detected - returning all name matches');
       return nameMatches.map(product => ({
         product,
