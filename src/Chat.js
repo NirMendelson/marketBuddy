@@ -441,21 +441,21 @@ const Chat = () => {
                             certain.reduce((sum, item) => sum + (item.matchedProducts[0].price * item.quantity), 0);
             const total = subtotal + deliveryFee;
             
-            responseText += `סיכום הזמנה:\n`;
+            responseText += `סיכום הזמנה:\n\n`;
             
             // Add existing items
             groceryItems.forEach(item => {
-              responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
+              responseText += `- ${item.quantity} ${item.unit_measure || 'יחידה'} ${item.name} - ${item.price}₪\n`;
             });
             
             // Add new items
             certain.forEach(item => {
               const topMatch = item.matchedProducts[0];
-              responseText += `- ${item.quantity} ${item.unit} ${topMatch.name} - ${topMatch.price}₪\n`;
+              responseText += `- ${item.quantity} ${item.unit || 'יחידה'} ${topMatch.name} - ${topMatch.price}₪\n`;
             });
             
-            responseText += `- משלוח - ${deliveryFee}₪\n\n`;
-            responseText += `סה"כ ${total.toFixed(1)}₪\n\n`;
+            responseText += `\n- משלוח - ${deliveryFee}₪\n`;
+            responseText += `סה"כ לתשלום: ${total.toFixed(2)}₪\n\n`;
             responseText += `לסיום ההזמנה הקלד "סיים"\nלהוספת פריטים נוספים, הקלד אותם כעת`;
           }
           

@@ -198,9 +198,13 @@ async function findCandidateProducts(item) {
       }));
     }
 
-    // For other products, filter by size if specified
+    // For other products, find the closest size match
     let candidates = nameMatches;
     if (inputSize) {
+      // Convert input size to grams for comparison
+      const inputSizeInGrams = inputUnit === 'ק"ג' || inputUnit === 'קילוגרם' ? inputSize * 1000 : inputSize;
+      
+      // Find products that can be combined to match the requested size
       candidates = nameMatches.filter(product => {
         const productSizeMatch = product.name.match(/(\d+)\s*(גרם|ק"ג|קילוגרם)/);
         if (!productSizeMatch) return false;
@@ -208,13 +212,22 @@ async function findCandidateProducts(item) {
         const productSize = parseInt(productSizeMatch[1]);
         const productUnit = productSizeMatch[2];
         
-        // Convert to grams for comparison if needed
-        const inputSizeInGrams = inputUnit === 'ק"ג' || inputUnit === 'קילוגרם' ? inputSize * 1000 : inputSize;
+        // Convert product size to grams
         const productSizeInGrams = productUnit === 'ק"ג' || productUnit === 'קילוגרם' ? productSize * 1000 : productSize;
         
-        return inputSizeInGrams === productSizeInGrams;
+        // Check if the product size is a divisor of the input size
+        // This means we can buy multiple of this product to match the requested size
+        return inputSizeInGrams % productSizeInGrams === 0;
       });
-      console.log(`Filtered to ${candidates.length} products with matching size`);
+      
+      // If no candidates found with exact size match, return all name matches
+      // This allows GPT to choose the best option even if size doesn't match exactly
+      if (candidates.length === 0) {
+        console.log('No exact size matches found, returning all name matches');
+        candidates = nameMatches;
+      }
+      
+      console.log(`Filtered to ${candidates.length} products that can be combined to match the requested size`);
     }
 
     // Score the remaining candidates
@@ -227,9 +240,14 @@ async function findCandidateProducts(item) {
       // Name match is already guaranteed, so give it full points
       similarity += 0.5;
       
-      // Size match
-      if (specs.size && productSpecs.size && specs.size === productSpecs.size) {
-        similarity += 0.3;
+      // Size match - give points if the product size is a divisor of the input size
+      if (specs.size && productSpecs.size) {
+        const inputSizeInGrams = specs.sizeUnit === 'ק"ג' || specs.sizeUnit === 'קילוגרם' ? specs.size * 1000 : specs.size;
+        const productSizeInGrams = productSpecs.sizeUnit === 'ק"ג' || productSpecs.sizeUnit === 'קילוגרם' ? productSpecs.size * 1000 : productSpecs.size;
+        
+        if (inputSizeInGrams % productSizeInGrams === 0) {
+          similarity += 0.3;
+        }
       }
       
       // Unit match
@@ -242,7 +260,7 @@ async function findCandidateProducts(item) {
         similarity,
         matchDetails: {
           nameMatch: true,
-          hasMatchingSize: specs.size && productSpecs.size && specs.size === productSpecs.size,
+          hasMatchingSize: specs.size && productSpecs.size && specs.size % productSpecs.size === 0,
           hasMatchingUnit: specs.sizeUnit && productSpecs.sizeUnit && specs.sizeUnit === productSpecs.sizeUnit,
           hasMatchingPercentage: specs.percentage && productSpecs.percentage && specs.percentage === productSpecs.percentage,
           hasMatchingBrand: specs.brand && productSpecs.brand && specs.brand === productSpecs.brand

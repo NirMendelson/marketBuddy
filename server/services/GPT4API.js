@@ -80,20 +80,6 @@ function cleanHebrewText(text) {
   text = text.replace(/מ"ל/g, 'מיליליטר');
   text = text.replace(/ל"ל/g, 'ליטר');
   
-  // Add quotes around Hebrew strings in JSON, but only if they're not already quoted
-  text = text.replace(/(\s*"unit":\s*)([^",\n]+)(,?)/g, (match, prefix, value, suffix) => {
-    if (!value.startsWith('"')) {
-      return `${prefix}"${value}"${suffix}`;
-    }
-    return match;
-  });
-  
-  text = text.replace(/(\s*"product":\s*)([^",\n]+)(,?)/g, (match, prefix, value, suffix) => {
-    // Remove any existing quotes and add new ones
-    const cleanValue = value.replace(/^"|"$/g, '');
-    return `${prefix}"${cleanValue}"${suffix}`;
-  });
-  
   return text;
 }
 
