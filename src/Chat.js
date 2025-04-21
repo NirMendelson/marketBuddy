@@ -6,6 +6,8 @@ import { FiSend, FiUser, FiPlus, FiCheck, FiShoppingCart, FiAlertTriangle, FiHel
 // API client function to call backend
 const processGroceryList = async (message, maxParticipants = 1, deliveryDate = null) => {
   try {
+    console.log('Starting processGroceryList with message:', message);
+    
     // Call the backend API endpoint to create an order
     const response = await fetch('/orders/process-list', {
       method: 'POST',
@@ -14,20 +16,31 @@ const processGroceryList = async (message, maxParticipants = 1, deliveryDate = n
       },
       credentials: 'include', // Important for sessions
       body: JSON.stringify({ 
-        message,
-        maxParticipants,
-        deliveryDate
+        message
       })
     });
     
+    console.log('Server response status:', response.status);
+    
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Server error response:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText: errorText
+      });
+      throw new Error(errorText || `API error: ${response.status}`);
     }
     
-    return await response.json();
+    const responseData = await response.json();
+    console.log('Server response data:', responseData);
+    return responseData;
   } catch (error) {
-    console.error('Error in processGroceryList:', error);
+    console.error('Error in processGroceryList:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     throw error;
   }
 };
@@ -71,6 +84,16 @@ const Chat = () => {
   const [showOrderSettings, setShowOrderSettings] = useState(false);
   const messagesEndRef = useRef(null);
   
+  const adjustTextareaHeight = (textarea) => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+
+  const handleMessageChange = (e) => {
+    setMessage(e.target.value);
+    adjustTextareaHeight(e.target);
+  };
+
   // Creates a new order with all the items currently in the shopping cart
   const createOrderFromCart = async (orderMaxParticipants, orderDeliveryDate, orderDeliveryTime) => {
     try {
@@ -302,6 +325,13 @@ const Chat = () => {
       setMessages([...messages, { text: userMessage, sender: "user" }]);
       setMessage(""); // Clear input field immediately for better UX
       
+      // Reset textarea height after sending
+      const textarea = document.querySelector('.chat-input');
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = '20px'; // Reset to original height
+      }
+      
       // Check if user wants to finish the order
       if (userMessage.toLowerCase() === 'סיים' || userMessage.toLowerCase() === 'סיום') {
         console.log('User requested to finish order');
@@ -397,10 +427,13 @@ const Chat = () => {
           const formattedOptions = uncertain.map(item => ({
             id: Date.now() + Math.random(),
             originalItem: item,
-            product: item.matchedProducts[0].name, // Use the matched product name
+            product: item.product, // Use the original product name
             quantity: item.quantity,
-            unit: item.matchedProducts[0].unit,
-            options: item.matchedProducts
+            unit: item.unit,
+            options: item.matchedProducts.map(product => ({
+              ...product,
+              displayName: product.name // Store the database product name
+            }))
           }));
           
           setPendingOptions(formattedOptions);
@@ -462,7 +495,11 @@ const Chat = () => {
         }
         
       } catch (error) {
-        console.error("Error processing grocery list:", error);
+        console.error("Error processing grocery list:", {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
         setMessages(msgs => [...msgs, { 
           text: `שגיאה בעיבוד הרשימה: ${error.message}. אנא נסה שוב או פנה לתמיכה.`, 
           sender: "ai" 
@@ -643,7 +680,7 @@ const Chat = () => {
               onClick={() => handleOptionSelect(item.id, index)}
             >
               {option.isSelectedByGPT && <FiCheck size={14} className="ai-pick" />} 
-              {option.name} ({option.brand || 'ללא מותג'}) - {option.price}₪
+              {option.displayName} ({option.brand || 'ללא מותג'}) - {option.price}₪
             </button>
           ))}
         </div>
@@ -960,7 +997,7 @@ const Chat = () => {
             <textarea
               className="chat-input"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={handleMessageChange}
               onKeyDown={handleKeyDown}
               placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
               disabled={isProcessing}

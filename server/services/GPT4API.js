@@ -66,6 +66,54 @@ exports.processGroceryList = async (message) => {
 };
 
 /**
+ * Cleans and normalizes Hebrew text for JSON parsing
+ * @param {string} text - The text to clean
+ * @returns {string} - The cleaned text
+ */
+function cleanHebrewText(text) {
+  // Replace Hebrew quotes with regular quotes
+  text = text.replace(/["״]/g, '"');
+  
+  // Replace any problematic Hebrew characters
+  text = text.replace(/[׳]/g, "'");
+  
+  // Handle special cases for units
+  text = text.replace(/ק"ג/g, 'קילוגרם');
+  text = text.replace(/מ"ל/g, 'מיליליטר');
+  text = text.replace(/ל"ל/g, 'ליטר');
+  
+  return text;
+}
+
+/**
+ * Cleans a JSON string for parsing
+ * @param {string} jsonString - The JSON string to clean
+ * @returns {string} - The cleaned JSON string
+ */
+function cleanJsonString(jsonString) {
+  // Remove any markdown code block markers
+  jsonString = jsonString.replace(/```json\n?/g, '');
+  jsonString = jsonString.replace(/```\n?/g, '');
+  
+  // Remove any leading/trailing whitespace
+  jsonString = jsonString.trim();
+  
+  // Remove any BOM characters
+  jsonString = jsonString.replace(/^\uFEFF/, '');
+  
+  // Fix common JSON issues
+  jsonString = jsonString
+    // Fix missing commas between objects
+    .replace(/\}\s*\{/g, '},{')
+    // Fix missing commas between array elements
+    .replace(/"\s*"/g, '","')
+    // Fix missing quotes around property names
+    .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+  
+  return jsonString;
+}
+
+/**
  * Parse a grocery list message using Azure OpenAI API
  * @param {string} message - The user's grocery list message
  * @returns {Promise<Array>} - Array of parsed items
@@ -82,8 +130,6 @@ async function parseGroceryListWithGPT(message) {
   const apiUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_VERSION}`;
   console.log(`Making request to: ${apiUrl}`);
   
-  // Try to call the Azure OpenAI API, but fall back to a simulated response if it fails
-  // This allows testing even without valid API credentials
   try {
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -98,7 +144,7 @@ async function parseGroceryListWithGPT(message) {
             content: `You are a grocery shopping assistant that helps parse grocery lists in Hebrew.
                      For each item, extract the following:
                      - Quantity (the number of units the user wants to buy, default is 1 if not specified)
-                     - Unit (e.g., גרם, ק"ג, יחידה, מ"ל, ליטר)
+                     - Unit (e.g., קילוגרם, יחידה, מיליליטר, ליטר)
                      - Product name and details (including brand, percentage, etc.)
                      
                      Important: The quantity should represent how many of the product the user wants to order, 
@@ -120,54 +166,93 @@ async function parseGroceryListWithGPT(message) {
                           "confidence": number
                         }
                       ]
-                     }`
+                     }
+                     
+                     Important: 
+                     1. Use full unit names (e.g., "קילוגרם" instead of "ק"ג")
+                     2. Make sure the JSON is properly formatted and all strings are properly escaped.
+                     3. Avoid using quotes within the unit or product names.`
           },
           {
             role: 'user',
             content: message
           }
         ],
-        temperature: 0.3,
-        max_tokens: 800,
+        temperature: 0.2,
+        max_tokens: 1000,
         top_p: 0.95,
         frequency_penalty: 0,
         presence_penalty: 0
       })
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Azure OpenAI API error (${response.status}): ${errorText}`);
       throw new Error(`Azure OpenAI API error: ${response.status} ${response.statusText}`);
     }
-    
+
     const data = await response.json();
-    console.log("Raw API response:", data);
-    
-    // Extract and parse the JSON from the AI response
-    const responseContent = data.choices[0].message.content;
-    console.log("AI response content:", responseContent);
-    
-    // The AI might return JSON wrapped in markdown code blocks
-    const jsonMatch = responseContent.match(/```json\n([\s\S]*?)\n```/) || 
-                     responseContent.match(/```\n([\s\S]*?)\n```/) ||
-                     [null, responseContent];
-    
-    const cleanJson = jsonMatch[1] ? jsonMatch[1].trim() : responseContent.trim();
-    
+    console.log('Azure OpenAI API response:', data);
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('Invalid API response structure:', data);
+      throw new Error('Invalid API response structure');
+    }
+
+    const content = data.choices[0].message.content;
+    console.log('Raw content from AI:', content);
+
     try {
-      const parsedResponse = JSON.parse(cleanJson);
-      return parsedResponse.items || [];
-    } catch (error) {
-      console.error("Error parsing AI response:", error);
-      console.error("Raw response content:", responseContent);
-      throw new Error("Failed to parse AI response: " + error.message);
+      // Clean the content before parsing
+      const cleanedContent = cleanHebrewText(content);
+      console.log('Cleaned content:', cleanedContent);
+
+      // Try to parse the cleaned content
+      let parsedData;
+      try {
+        // First try to parse as is
+        parsedData = JSON.parse(cleanedContent);
+      } catch (e) {
+        // If that fails, try to clean the JSON string
+        const cleanJson = cleanJsonString(cleanedContent);
+        console.log('Cleaned JSON string:', cleanJson);
+        
+        try {
+          parsedData = JSON.parse(cleanJson);
+        } catch (e2) {
+          console.error('Failed to parse JSON after cleaning:', {
+            error: e2.message,
+            content: cleanJson
+          });
+          throw new Error(`Failed to parse AI response: ${e2.message}`);
+        }
+      }
+
+      console.log('Parsed JSON data:', parsedData);
+
+      if (!parsedData.items || !Array.isArray(parsedData.items)) {
+        console.error('Invalid parsed data structure:', parsedData);
+        throw new Error('Invalid parsed data structure');
+      }
+
+      return parsedData.items;
+    } catch (parseError) {
+      console.error('Error parsing JSON response:', {
+        error: parseError.message,
+        content: content,
+        position: parseError.position
+      });
+      throw new Error(`Failed to parse AI response: ${parseError.message}`);
     }
   } catch (error) {
-    console.error("Error calling Azure OpenAI API:", error);
-    throw new Error("Failed to call Azure OpenAI API: " + error.message);
+    console.error('Error in parseGroceryListWithGPT:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    throw error;
   }
-  
 }
 
 /**

@@ -8,7 +8,7 @@ const app = express();
 const { supabase, pool, initializeDatabase } = require('./config/db');
 const { processGroceryList } = require('./services/GPT4API');
 const { findNearbyUsers } = require('./services/NearbyUsers');
-const { sendEmail, createNearbyOrderEmail } = require('./services/email'); 
+const { sendEmail, createNearbyOrderEmail } = require('./services/Email'); 
 
 
 // Initialize database
@@ -486,13 +486,28 @@ app.get('/check-auth', (req, res) => {
 // Process grocery list and create a new order
 app.post('/orders/process-list', isAuthenticated, async (req, res) => {
   try {
+    console.log('Received process-list request:', {
+      body: req.body,
+      user: req.session.user
+    });
+    
     const { message } = req.body;
-    const userEmail = req.session.user.email;
+    
+    if (!message) {
+      console.error('No message provided in request');
+      return res.status(400).json({ error: 'No message provided' });
+    }
     
     console.log("Processing grocery list:", message);
     
     // Process the grocery list using GPT4API
     const processedList = await processGroceryList(message);
+    console.log('Processed list result:', processedList);
+    
+    if (!processedList || !processedList.items) {
+      console.error('Invalid processed list format:', processedList);
+      return res.status(500).json({ error: 'Invalid processed list format' });
+    }
     
     // Return the processed list
     res.json({
@@ -509,7 +524,11 @@ app.post('/orders/process-list', isAuthenticated, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Error processing grocery list:', error);
+    console.error('Error processing grocery list:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     res.status(500).json({ error: 'אירעה שגיאה בעיבוד רשימת הקניות' });
   }
 });

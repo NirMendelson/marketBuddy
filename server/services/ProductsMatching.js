@@ -60,12 +60,39 @@ function calculateSimilarity(str1, str2) {
   const s1 = str1.toLowerCase();
   const s2 = str2.toLowerCase();
   
+  // Check for exact match
+  if (s1 === s2) return 1.0;
+  
+  // Check if one string contains the other (but not vice versa)
+  const s1ContainsS2 = s1.includes(s2);
+  const s2ContainsS1 = s2.includes(s1);
+  
+  // If one contains the other but not vice versa, it's likely a partial match
+  if (s1ContainsS2 !== s2ContainsS1) {
+    // If the longer string contains the shorter one, it's likely a more specific product
+    if (s1.length > s2.length && s1ContainsS2) {
+      return 0.7; // More specific product gets a higher score
+    } else if (s2.length > s1.length && s2ContainsS1) {
+      return 0.6; // Less specific product gets a lower score
+    }
+  }
+  
+  // Calculate Levenshtein distance for non-exact matches
   const distance = levenshteinDistance(s1, s2);
   const maxLength = Math.max(s1.length, s2.length);
   
   // Prevent division by zero
   if (maxLength === 0) return 1.0;
-  return 1 - distance / maxLength;
+  
+  // Base similarity score
+  let similarity = 1 - distance / maxLength;
+  
+  // Penalize partial matches that might be incorrect
+  if (similarity < 0.8) {
+    similarity *= 0.8; // Reduce score for partial matches
+  }
+  
+  return similarity;
 }
 
 /**

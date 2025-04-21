@@ -50,6 +50,16 @@ const OrderParticipant = () => {
     }
   }, [messages]);
 
+  const adjustTextareaHeight = (textarea) => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  };
+
+  const handleMessageChange = (e) => {
+    setMessage(e.target.value);
+    adjustTextareaHeight(e.target);
+  };
+
   const handleSend = async () => {
     if (message.trim() !== "") {
       console.log('Starting handleSend with message:', message);
@@ -351,7 +361,7 @@ const OrderParticipant = () => {
                 <textarea
                   className="chat-input"
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={handleMessageChange}
                   onKeyDown={handleKeyDown}
                   placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
                   disabled={isProcessing}
@@ -400,7 +410,7 @@ const OrderParticipant = () => {
                 <textarea
                   className="chat-input"
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={handleMessageChange}
                   onKeyDown={handleKeyDown}
                   placeholder="הקלד את רשימת הקניות שלך כאן (פריט אחד בכל שורה)..."
                   disabled={isProcessing}
