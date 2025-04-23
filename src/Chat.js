@@ -83,7 +83,39 @@ const Chat = () => {
   const [user, setUser] = useState(null);
   const [showOrderSettings, setShowOrderSettings] = useState(false);
   const messagesEndRef = useRef(null);
-  
+
+  // Add scroll debugging
+  useEffect(() => {
+    // preserve originals
+    window._origScrollTo = window.scrollTo;
+    Element.prototype._origScrollIntoView = Element.prototype.scrollIntoView;
+
+    // override with trace
+    window.scrollTo = function() {
+      console.trace('window.scrollTo called with', arguments);
+      return window._origScrollTo.apply(this, arguments);
+    };
+
+    Element.prototype.scrollIntoView = function() {
+      console.trace('element.scrollIntoView called on', this);
+      return this._origScrollIntoView.apply(this, arguments);
+    };
+
+    // Cleanup on unmount
+    return () => {
+      window.scrollTo = window._origScrollTo;
+      Element.prototype.scrollIntoView = Element.prototype._origScrollIntoView;
+    };
+  }, []);
+
+  // Scroll effect that only runs when message count changes
+  useEffect(() => {
+    console.trace('scrolling to bottom; new message count:', messages.length);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length]);
+
   const adjustTextareaHeight = (textarea) => {
     textarea.style.height = 'auto';
     textarea.style.height = textarea.scrollHeight + 'px';
@@ -216,13 +248,6 @@ const Chat = () => {
     checkAuth();
   }, [navigate]);
   
-  // Scroll to bottom whenever messages change
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [messages]);
-
   // Helper function to generate delivery time options
   const generateDeliveryOptions = () => {
     const options = [];
@@ -441,33 +466,49 @@ const Chat = () => {
                             certain.reduce((sum, item) => sum + (item.matchedProducts[0].price * item.quantity), 0);
             const total = subtotal + deliveryFee;
             
-            responseText += `סיכום הזמנה:\n\n`;
+            console.log('Order Summary - Grocery Items:', groceryItems.map(item => ({
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              unit_measure: item.unit_measure,
+              price: item.price
+            })));
+            
+            console.log('Order Summary - New Items:', certain.map(item => ({
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              matchedProduct: item.matchedProducts[0]
+            })));
             
             // Add existing items
             groceryItems.forEach(item => {
-              console.log('Grocery item unit:', {
-                itemName: item.name,
-                unit: item.unit_measure,
-                rawItem: item
+              console.log('Adding grocery item to summary:', {
+                name: item.name,
+                quantity: item.quantity,
+                unit: item.unit,
+                unit_measure: item.unit_measure,
+                price: item.price
               });
-              responseText += `- ${item.quantity} ${item.unit_measure || 'יחידה'} ${item.name} - ${item.price}₪\n`;
+              responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.price}₪\n`;
             });
             
             // Add new items
             certain.forEach(item => {
-              const topMatch = item.matchedProducts[0];
-              console.log('New item unit:', {
-                itemName: item.product,
+              console.log('Adding new item to summary:', {
+                name: item.name,
+                quantity: item.quantity,
                 unit: item.unit,
-                rawItem: item,
-                topMatch: topMatch
+                matchedProduct: item.matchedProducts[0]
               });
-              responseText += `- ${item.quantity} ${item.unit || 'יחידה'} ${topMatch.name} - ${topMatch.price}₪\n`;
+              responseText += `- ${item.quantity} ${item.unit} ${item.name} - ${item.matchedProducts[0].price}₪\n`;
             });
+            
+            console.log('Final order summary text:', responseText);
             
             responseText += `\n- משלוח - ${deliveryFee}₪\n`;
             responseText += `סה"כ לתשלום: ${total.toFixed(2)}₪\n\n`;
-            responseText += `לסיום ההזמנה הקלד "סיים"\nלהוספת פריטים נוספים, הקלד אותם כעת`;
+            responseText += `לסיום ההזמנה הקלד "סיים"`;
           }
           
           console.log('Adding response message:', responseText);
@@ -524,18 +565,25 @@ const Chat = () => {
 
   // Update the grocery items state with the processed items
   const updateGroceryItems = (items) => {
-    console.log('Updating grocery items with:', items);
+    console.log('Creating grocery items:', items);
     
     const newItems = items.map(item => {
       // Create a new item object for our state
       const topMatch = item.matchedProducts && item.matchedProducts.length > 0 ? item.matchedProducts[0] : null;
+      
+      console.log('Creating new grocery item:', {
+        originalItem: item,
+        topMatch: topMatch,
+        unit_measure: topMatch ? topMatch.unit_measure : null,
+        size: topMatch ? topMatch.size : null
+      });
       
       // Always use the matched product name and details
       const newItem = {
         id: Date.now() + Math.random(), // Generate a unique ID
         name: topMatch ? topMatch.name : item.product, // Use the matched product name if available
         quantity: item.quantity,
-        unit: topMatch ? topMatch.unit : item.unit,
+        unit: topMatch ? topMatch.unit_measure : item.unit,
         price: topMatch ? topMatch.price : 0,
         productId: topMatch ? topMatch.id : null,
         isCertain: true,
@@ -558,8 +606,25 @@ const Chat = () => {
     });
   };
 
-  // Handle option selection for a pending item
+  // Handle option click with focus prevention
+  const handleOptionClick = (e, itemId, optionIndex) => {
+    e.preventDefault();
+    // Now that it never receives focus, the browser can't auto-scroll to it
+    handleOptionSelect(itemId, optionIndex);
+  };
+
   const handleOptionSelect = (itemId, optionIndex) => {
+    const item = pendingOptions.find(item => item.id === itemId);
+    if (!item) return;
+    
+    console.log('Option selected:', {
+      optionId: itemId,
+      optionIndex: optionIndex,
+      selectedOption: item.options[optionIndex],
+      unit_measure: item.options[optionIndex].unit_measure,
+      size: item.options[optionIndex].size
+    });
+    
     setPendingOptions(prev => 
       prev.map(item => 
         item.id === itemId 
@@ -679,20 +744,16 @@ const Chat = () => {
     setShowOrderSettings(!showOrderSettings);
   };
 
-  // Render option buttons for pending items
+  // Update the OptionButtons component
   const OptionButtons = ({ item }) => {
     // Format the option text with name, brand, size, and unit measure
     const formatOptionText = (option) => {
-      console.log('Option data:', option); // Debug log
-      
       const parts = [option.name];
       
-      // Add brand if exists
       if (option.brand) {
         parts.push(option.brand);
       }
       
-      // Add size and unit if both exist
       if (option.size && option.unit_measure) {
         parts.push(`${option.size} ${option.unit_measure}`);
       } else if (option.size) {
@@ -717,9 +778,11 @@ const Chat = () => {
         <div className="option-list">
           {item.options.map((option, index) => (
             <button 
+              type="button"
               key={index} 
               className={`option-button ${item.selectedOption === index ? 'selected' : ''}`}
-              onClick={() => handleOptionSelect(item.id, index)}
+              onMouseDown={e => e.preventDefault()}
+              onClick={e => handleOptionClick(e, item.id, index)}
             >
               {item.selectedOption === index && <FiCheck size={14} className="ai-pick" />} 
               {formatOptionText(option)} - {option.price}₪
