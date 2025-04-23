@@ -644,7 +644,7 @@ const Chat = () => {
           id: Date.now() + Math.random(),
           name: selectedOption.name,
           quantity: item.quantity,
-          unit: selectedOption.unit,
+          unit: selectedOption.unit_measure,
           price: selectedOption.price,
           productId: selectedOption.id,
           isCertain: true,
