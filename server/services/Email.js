@@ -28,7 +28,7 @@ const createNearbyOrderEmail = ({
 
 <strong>הזמנה מסופרמרקט:</strong> ${supermarket}
 
-יכול להוסיף עד 10 מוצרים ולשלם עלות משלוח של 10 ש"ח בלבד
+ניתן להוסיף עד 10 מוצרים ולשלם עלות משלוח של 10 ש"ח בלבד
 
 <a href="http://localhost:3000/orders/${orderId}" style="color: #0066cc; text-decoration: none;">לינק להצטרפות</a>
 

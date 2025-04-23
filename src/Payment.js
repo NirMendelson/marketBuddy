@@ -4,8 +4,10 @@ import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
 import { useNavigate } from 'react-router-dom';
 import './Payment.css';
 
-const Payment = ({ orderTotal }) => {
+const Payment = () => {
   const navigate = useNavigate();
+  // safeTotal will always be a number
+  const [safeTotal, setSafeTotal] = useState(0);
   const [orderId, setOrderId] = useState(null);
   const [error, setError] = useState(null);
   const [cartItems, setCartItems] = useState([]);
@@ -24,6 +26,13 @@ const Payment = ({ orderTotal }) => {
     
     setCartItems(items);
     setOrderDetails(details);
+  }, []);
+
+  // read the total (as string) and parse it only once
+  useEffect(() => {
+    const stored = localStorage.getItem("orderTotal");
+    const n = parseFloat(stored);
+    setSafeTotal(!isNaN(n) ? n : 0);
   }, []);
 
   const createOrderAfterPayment = async () => {
@@ -61,9 +70,9 @@ const Payment = ({ orderTotal }) => {
 
       const response = await fetch('/orders/create-after-payment', {
         method: 'POST',
+        credentials: 'include',  // Ensure session cookie is sent
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           supermarket: supermarket,
@@ -75,8 +84,8 @@ const Payment = ({ orderTotal }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to create order');
+        const { message } = await response.json().catch(() => ({}));
+        throw new Error(message || 'Failed to create order');
       }
 
       const orderData = await response.json();
@@ -95,10 +104,15 @@ const Payment = ({ orderTotal }) => {
   const onApprove = async (data, actions) => {
     try {
       // Create the order in our database after PayPal payment is successful
-      const response = await createOrderAfterPayment();
+      const result = await createOrderAfterPayment();
+      
+      if (!result || !result.order) {
+        // Error already set in state by createOrderAfterPayment
+        return;
+      }
       
       // Get the order ID from the response
-      const orderId = response.order.order_id;
+      const orderId = result.order.order_id;
       
       // Clear the cart and order details from localStorage
       localStorage.removeItem("cartItems");
@@ -136,7 +150,7 @@ const Payment = ({ orderTotal }) => {
     <div className="payment-container">
       <h2 className="payment-title">השלם תשלום עם PayPal</h2>
       <div className="payment-amount">
-        <p>סכום לתשלום: {orderTotal.toFixed(2)}₪</p>
+        <p>סכום לתשלום: {safeTotal.toFixed(2)}₪</p>
       </div>
       {error && (
         <div className="payment-error">
@@ -156,7 +170,7 @@ const Payment = ({ orderTotal }) => {
               purchase_units: [
                 {
                   amount: {
-                    value: orderTotal.toFixed(2),
+                    value: safeTotal.toFixed(2),
                     currency_code: "ILS"
                   }
                 }
